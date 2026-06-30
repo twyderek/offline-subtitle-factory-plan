@@ -1,0 +1,13 @@
+{
+  "name": "offline-subtitle-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first offline subtitle generation frontend MVP.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

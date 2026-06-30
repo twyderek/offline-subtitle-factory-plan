@@ -1,0 +1,9 @@
+node_modules/
+jobs/
+tools/node/
+tools/ffmpeg/
+tools/python-venv/
+tools/whisper-models/
+tools/_downloads/
+.env
+npm-debug.log*

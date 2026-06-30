@@ -1,0 +1,11 @@
+app/jobs/
+app/tools/node/
+app/tools/ffmpeg/
+app/tools/python-venv/
+app/tools/whisper-models/
+app/tools/_downloads/
+app/node_modules/
+*.log
+.env
+.DS_Store
+Thumbs.db
