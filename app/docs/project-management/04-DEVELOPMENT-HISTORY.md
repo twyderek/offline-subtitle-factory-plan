@@ -25,7 +25,7 @@
 | 0.49.0／2026-08-13 | Breeze ASR 25 第一版實驗性正式發布 | 由最新 `main` 移植 runtime／模型 probe 與診斷遮罩；PR #11、最終 tag Windows workflow、9 項正式資產與發布後全量下載核對通過；真實 checkpoint／runtime／音訊品質與效能仍是已揭露的 experimental 風險 |
 | 0.49.1／2026-08-18 | Breeze 首次選擇設定協助與 Mac Air 效能依據正式發布 | PR #14、merge `917ae828`、tag workflow `32095872065` 與 13 項公開資產已核對；選擇器移除 experimental 字樣並引導模型／runtime 設定；MacBook Air M3／8 GB 的 1:46 影片約 6 小時列為效能警示，真實 Breeze runtime／品質／跨平台驗收仍未完成 |
 | Windows runtime／2026-08-24 | Breeze ASR 25 managed runtime Phase 2/3 真實交付 | Runtime Release `breeze-runtime-2026.08.1`、ZIP 286,785,161 bytes／SHA `724e8bcb…bb8bf4b`、license evidence、strict clean Windows API 安裝與真實 JFK transcription 已核對；台灣華語品質、長音訊、GPU 與 macOS managed runtime 仍待另案驗收 |
-| 0.50.0／2026-08-25 | Windows Breeze managed runtime 一鍵安裝正式 App 版本 | 版本／lockfile、Windows x64 Setup／Portable、manifest、Breeze runtime 下載導流與公開 Release 資產核對；未簽章、pristine VM、macOS managed runtime、品質與長音訊風險持續揭露 |
+| 0.50.0／2026-08-25 | Windows Breeze managed runtime 一鍵安裝正式 App 版本 | tag `v0.50.0`／commit `44c4022` 與 GitHub Latest Release 已公開；7 項 Windows 資產大小／digest／下載回讀核對通過；未簽章、pristine VM、macOS managed runtime、品質與長音訊風險持續揭露 |
 
 ## 0.45.1 發布補充
 

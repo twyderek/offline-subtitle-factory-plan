@@ -2,8 +2,8 @@
 
 ## 2026-08-25 — Windows Breeze Managed Runtime 0.50.0 正式版本發布（REL-039）
 
-- 狀態：進行中
-- 結案判定：待執行
+- 狀態：完成
+- 結案判定：0.50.0 已公開為 GitHub Latest Release；在需求方接受未簽章、pristine VM、macOS managed runtime、完整逐依賴法律審查與品質／效能未驗收等明列風險下，本輪完成正式 App 版本交付與發布後資產核對
 - 審查／交付屬性：release；將目前已驗證的 Windows x64 Electron App、Breeze managed runtime manifest／安裝流程與測試資產整理為 `0.50.0`，發布至目前 GitHub remote `twyderek/offline-subtitle-factory-plan`
 - 執行者：Codex
 - 需求來源：需求方明確要求「可以正式執行，幫我更新版本，發佈至github」
@@ -26,6 +26,14 @@
   - 核准時間：2026-08-25（Asia/Taipei；本輪明確要求正式執行、更新版本與發布至 GitHub）
   - 核准範圍：同意打包、提交、推送、建立 `v0.50.0` annotated tag、建立公開 GitHub Release、共享 Setup／Portable／checksum／metadata 與 Release notes；接受 Windows 未簽章／SmartScreen，以及 pristine VM、macOS managed runtime、完整逐依賴法律審查與其他本條目明列未驗證風險；不得覆寫既有公開版本或忽略 checksum／資產／測試失敗
 - 發布安全界線：版本、來源 commit、封裝資產、SHA、GitHub digest／下載結果與授權範圍任一不一致即停止發布。
+- 實際修改與發布結果：`app/package.json`／lockfile、Release notes、Windows workflow、README 與治理文件已同步至 `0.50.0`；`main` commit `44c40225e2b0a39e759048439e3db912b6333ad9` 已推送，annotated tag `v0.50.0` 已推送並解析至同一 commit。公開 Release <https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0> 已於 `2026-08-25T00:59:16Z` 公開並標示 Latest，非 draft／非 prerelease，包含 Setup、Portable、blockmap、`latest.yml`、SHA 清單、signing status 與 Release notes 共 7 項資產。
+- 開發與發布驗證結果：`npm run check`、`npm ci --ignore-scripts --dry-run`、`npm audit --json`（286 dependencies，漏洞 0）、runtime manifest／verify、7z archive／封裝內容、`git diff --check` 與 packaged renderer smoke 均通過；GitHub API 資產大小／digest 與本機 SHA-256 全數一致，公開下載 URL 的 Range 回讀通過，5 個小型資產已完整下載並再次 hash-match。
+- round2 審查檔案：`docs/project-management/reviews/2026-08-25-windows-breeze-runtime-release-round2.md`
+- round2 判定（逐字引用完整結論句）：**有條件通過；0.50.0 候選包可在明確接受下發布，但目前尚不能宣稱已完成無條件發布驗收，也不能宣稱 GitHub Release 已建立。** 本輪已完成其所指的 GitHub Release 與發布後核對；仍保留報告列出的未簽章、pristine VM、品質／效能與 license／provenance 限制。
+- round3 審查檔案：`docs/project-management/reviews/2026-08-25-windows-breeze-runtime-release-round3.md`
+- round3 判定（逐字引用完整結論句）：**本輪 REL-039 Windows Breeze managed runtime 0.50.0 公開發布後獨立複審結論為有條件通過：GitHub Release v0.50.0 已公開且非 draft／非 prerelease，annotated tag 已 peeled 至 44c40225e2b0a39e759048439e3db912b6333ad9，7 項資產的名稱／大小／GitHub digest／直接下載 URL 均已核對，7/7 range 回讀均以 HTTP 206 回傳正確總大小，現有證據亦記錄 packaged renderer smoke exit 0；但 Windows 未簽章、pristine VM／完整實機矩陣、license evidence 非法律意見、品質／效能與 source provenance 仍未閉合，因此不得宣稱無條件通過。**
+- round3 條件是否已被需求方接受：是（需求方於 2026-08-25 明確授權正式更新與 GitHub 發布，並接受本條目與 Release notes 揭露的未簽章、pristine VM、完整實機矩陣、license／source provenance、品質／效能與跨平台 managed runtime 風險；本欄不把上述未完成項目改寫為已驗收）。
+- 獨立審查結論：round1 的「不通過」阻擋項（尚無 tag／Release／發布後資產核對／packaged smoke 證據）已由本輪完成；round2 的條件式通過已在需求方明確接受剩餘風險下收斂。審查原文均保留，不改寫。
 
 本文件必須在每次分析、改版、測試、打包或發布開始前建立條目，完成後再補齊結果。最新項目置頂；每次前置閱讀只需範本規則與最新條目，歷史條目按需追溯。未完成欄位使用「待執行／待確認」，不得刪除。
 

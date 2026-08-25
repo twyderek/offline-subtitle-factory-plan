@@ -1,9 +1,9 @@
 # 目前專案狀態
 
 > 最後查證日期：2026-08-25
-> 現行版本：0.50.0（Windows Breeze managed runtime 正式發布準備中）
-> 現行公開版本：0.49.1（待 `v0.50.0` GitHub Release 完成）
-> 發布 tag／commit：`v0.50.0` → 待發布；既有 `v0.49.1` 保留
+> 現行版本：0.50.0（Windows Breeze managed runtime 正式發布）
+> 現行公開版本：0.50.0（GitHub Latest）
+> 發布 tag／commit：`v0.50.0` → `44c40225e2b0a39e759048439e3db912b6333ad9`；既有 `v0.49.1` 保留
 > 主分支：`main`
 
 ## 0.50.0 Windows Breeze managed runtime 正式發布（REL-039）
@@ -11,7 +11,7 @@
 - 本版將已完成驗證的 Windows x64 CPU managed runtime 一鍵安裝流程納入正式 App 版本；runtime 維持獨立 Release asset，不放入 App Setup／Portable。
 - App 版本統一為 `0.50.0`；Setup／Portable 會包含 `RELEASE-NOTES-0.50.0.md`、Breeze guide、正式 runtime manifest 與既有 Whisper.cpp 工具。
 - Windows runtime `2026.08.1` 的 ZIP 為 286,785,161 bytes，SHA-256 `724e8bcb45c7a1373e1d1eca0e413897354326a4fae207948e72ec529bb8bf4b`；固定 Release 仍為 <https://github.com/twyderek/offline-subtitle-factory-app/releases/tag/breeze-runtime-2026.08.1>。
-- 本輪預定 App Release：<https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0>；發布後需補入 tag commit、資產大小／digest／直接下載 URL 與核對結果。
+- App Release 已公開並標示 Latest：<https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0>；`isDraft=false`、`isPrerelease=false`，tag peeled 至 `44c40225e2b0a39e759048439e3db912b6333ad9`，7 項資產的大小／GitHub digest 與本機 SHA-256 已核對，公開下載 URL 的 Range 回讀通過。
 - 未簽章、SmartScreen、pristine Windows VM、macOS managed runtime、完整逐依賴法律 review、台灣華語品質與長音訊效能仍是明列風險，不由本版本號掩飾。
 
 ## 2026-08-24 工作樹：Windows Breeze managed runtime Phase 2/3 已完成（受控驗收）
