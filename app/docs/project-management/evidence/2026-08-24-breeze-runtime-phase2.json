@@ -1,0 +1,50 @@
+{
+  "recordedAt": "2026-08-24T13:10:00+08:00",
+  "scope": "FR-025 Windows Breeze managed runtime Phase 2/3 controlled acceptance",
+  "runtime": {
+    "version": "2026.08.1",
+    "zip": "breeze-runtime-win-x64-cpu-2026.08.1.zip",
+    "size": 286785161,
+    "uncompressedSize": 1436390789,
+    "sha256": "724e8bcb45c7a1373e1d1eca0e413897354326a4fae207948e72ec529bb8bf4b",
+    "release": "https://github.com/twyderek/offline-subtitle-factory-app/releases/tag/breeze-runtime-2026.08.1",
+    "breezeRevision": "c0993ecd98522d61066d3f5ce769e35c848b7855",
+    "patchedWhisperRevision": "f94c6ba670a35ee8d720d4221e102f4685c288d6",
+    "python": "3.11.15",
+    "torch": "2.4.1+cpu"
+  },
+  "controlledCleanProfile": {
+    "pathEnvironment": "C:\\Windows\\System32",
+    "commandsUnavailable": ["git", "node", "python", "py"],
+    "server": "bundled app/tools/node/node.exe",
+    "api": "POST /api/breeze-runtime/download",
+    "final": {
+      "status": "installed",
+      "ready": true,
+      "source": "managed",
+      "installedVersion": "2026.08.1",
+      "restartRequired": false
+    },
+    "qualification": "controlled clean-profile; not a pristine Windows VM or packaged Electron acceptance"
+  },
+  "appJob": {
+    "endpoint": "POST /api/jobs",
+    "jobId": "20260824050201-97e80c",
+    "engine": "breeze-asr-25",
+    "finalStatus": "completed",
+    "finalStage": "ready-review",
+    "progress": 100,
+    "draftSrt": "C:\\Users\\derek\\AppData\\Local\\Temp\\osf-breeze-job-e2e-20260824\\20260824050201-97e80c\\working\\draft.srt"
+  },
+  "renderer": {
+    "url": "http://127.0.0.1:8791/?token=breeze-runtime-api-test",
+    "selectedEngine": "breeze-asr-25",
+    "statusText": "Breeze ASR 25 已就緒，可開始提交任務",
+    "consoleErrors": []
+  },
+  "licenseEvidence": {
+    "reviewStatus": "engineering-evidence",
+    "legalOpinion": false,
+    "followUp": "Some transitive package metadata lacks an explicit license field; perform dependency-by-dependency redistribution review before future runtime revisions."
+  }
+}

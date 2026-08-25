@@ -4,40 +4,171 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import Busboy from 'busboy';
+import { getEditPaths, normalizeEditPlan, readEditPlan, resolveEffectiveMediaPath } from './lib/media-edit.mjs';
+import { trimSrtToRange } from './lib/subtitle-timeline.mjs';
+import { attachWhisperQuality, parseWhisperQualityJson } from './lib/whisper-quality.mjs';
+import { sanitizeWhisperSrt } from './lib/whisper-srt.mjs';
+import { shouldRetryWhisperOnCpu } from './lib/whisper-fallback-policy.mjs';
+import { buildWhisperCppArgs, inspectWhisperModels, normalizeWhisperModelName } from './lib/whisper-models.mjs';
+import { downloadWhisperModelFile, formatModelDownloadError, getWhisperModelDownloadDefinition, listWhisperModelDownloads, mergeWhisperModelManifest } from './lib/whisper-model-download.mjs';
+import { BREEZE_ASR_ENGINE, BREEZE_ASR_MODEL, BREEZE_ASR_REVISION, breezeRuntimeInstallGuide, breezeRuntimeInstallGuideDetails, buildBreezeAsrArgs, buildBreezeRuntimeProbeArgs, inspectBreezeAsrModel } from './lib/breeze-asr.mjs';
+import { resolveBreezePython, runBreezeRuntimeProbe } from './lib/breeze-runtime-probe.mjs';
+import { BREEZE_RUNTIME_STATUS, createBreezeRuntimeManager, getBreezeRuntimeDirectory, getBreezeRuntimeManifest } from './lib/breeze-runtime-manager.mjs';
+import { probeCommand } from './lib/process-probe.mjs';
+import { optimizeSubtitleCues } from './lib/ai/subtitle-optimizer.mjs';
+import { normalizeBilingualCues, parseSrtBilingual, serializeSrt, serializeVtt, renderCueText } from './public/bilingual-subtitles.mjs';
+import { createProvider, isSupportedProvider, listProviderDefinitions, PROVIDER_CAPABILITIES, PROVIDER_DEFAULT_BASE_URLS } from './lib/ai/providers.mjs';
+import { aiEndpointPrivacy, isLocalAiProvider, isLoopbackAiUrl, localAiCandidates } from './lib/ai/local-ai.mjs';
+import { inspectModelCapabilities } from './lib/ai/model-capabilities.mjs';
+import { glossaryToCsv, normalizeProjectAiSettings, parseGlossaryCsv } from './lib/ai/project-tools.mjs';
+import { canonicalizeLanguageTag, normalizeLanguageTag } from './lib/ai/languages.mjs';
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(appDir, 'public');
-const jobsDir = path.join(appDir, 'jobs');
-const toolsDir = path.join(appDir, 'tools');
+const defaultJobsDir = process.env.OFFLINE_SUBTITLE_DATA_DIR
+  ? path.resolve(process.env.OFFLINE_SUBTITLE_DATA_DIR)
+  : path.join(appDir, 'jobs');
+const defaultToolsDir = process.env.OFFLINE_SUBTITLE_TOOLS_DIR
+  ? path.resolve(process.env.OFFLINE_SUBTITLE_TOOLS_DIR)
+  : path.join(appDir, 'tools');
+const settingsDir = process.env.OFFLINE_SUBTITLE_SETTINGS_DIR
+  ? path.resolve(process.env.OFFLINE_SUBTITLE_SETTINGS_DIR)
+  : path.join(appDir, 'config');
+const settingsPath = path.join(settingsDir, 'settings.json');
+const aiSecretsPath = path.join(settingsDir, 'ai-secrets.json');
+let runtimeAiKeys = (() => {
+  try { return JSON.parse(process.env.SUBTITLE_AI_KEYS_JSON || '{}'); } catch { return {}; }
+})();
 const port = Number(process.env.PORT || 8790);
+const apiToken = process.env.OFFLINE_SUBTITLE_API_TOKEN || '';
 
-const toolPaths = {
-  node: path.join(toolsDir, 'node', 'node.exe'),
-  ffmpeg: path.join(toolsDir, 'ffmpeg', 'bin', 'ffmpeg.exe'),
-  python: path.join(toolsDir, 'python-venv', 'Scripts', 'python.exe'),
-  whisper: path.join(toolsDir, 'python-venv', 'Scripts', 'whisper.exe'),
-  whisperModels: path.join(toolsDir, 'whisper-models'),
-};
+const toolsInfo = resolveToolsInfo();
+const toolsDir = toolsInfo.toolsDir;
+const toolPaths = toolsInfo.paths;
+const breezeTestRunner = process.env.NODE_ENV === 'test' ? process.env.OFFLINE_SUBTITLE_TEST_BREEZE_RUNNER || '' : '';
+const allowMockBreezeModel = Boolean(breezeTestRunner);
+const usePartialWhisperDownloadFixture = process.env.NODE_ENV === 'test'
+  && process.env.OFFLINE_SUBTITLE_TEST_WHISPER_PARTIAL_DOWNLOAD === '1';
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',
   '.srt': 'text/plain; charset=utf-8',
+  '.ass': 'text/plain; charset=utf-8',
   '.vtt': 'text/vtt; charset=utf-8',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.mp4': 'video/mp4',
+  '.mkv': 'video/x-matroska',
   '.m4v': 'video/x-m4v',
   '.mov': 'video/quicktime',
 };
 
-fs.mkdirSync(jobsDir, { recursive: true });
+fs.mkdirSync(settingsDir, { recursive: true });
 fs.mkdirSync(toolPaths.whisperModels, { recursive: true });
+fs.mkdirSync(toolPaths.whisperModelCache, { recursive: true });
+fs.mkdirSync(toolPaths.breezeModelCache, { recursive: true });
+for (const modelCacheDir of [toolPaths.whisperModelCache, toolPaths.breezeModelCache]) {
+  for (const file of fs.readdirSync(modelCacheDir)) {
+    if (file.endsWith('.download')) {
+      try { fs.unlinkSync(path.join(modelCacheDir, file)); } catch {}
+    }
+  }
+}
 
 const runningJobs = new Map();
+const runningBurns = new Map();
+const runningWaveforms = new Map();
+const runningThumbnails = new Map();
+const runningTrims = new Map();
+const aiOptimizationJobs = new Map();
+const jobQueue = [];
+const configuredMaxConcurrentJobs = Number(process.env.OFFLINE_SUBTITLE_MAX_JOBS || 1);
+const maxConcurrentJobs = Number.isFinite(configuredMaxConcurrentJobs)
+  ? Math.max(1, Math.floor(configuredMaxConcurrentJobs))
+  : 1;
+let activeJobCount = 0;
+let jobsListCache = null;
+let basicToolsCache = null;
+let basicToolsPromise = null;
+let gpuCache = null;
+let gpuPromise = null;
+const basicToolsCacheTtlMs = 60000;
+const gpuCacheTtlMs = 5 * 60000;
+const whisperModelInspectionCacheTtlMs = 5000;
+const whisperModelDownloadJobs = new Map();
+let breezeModelDownloadJob = null;
+let breezeRuntimeInstallJob = null;
+const breezeRuntimeManager = createBreezeRuntimeManager({
+  platform: process.platform,
+  runtimeDirectory: getBreezeRuntimeDirectory({ env: process.env, platform: process.platform }),
+  // A cold Windows machine may need more than 15 seconds to import CPU torch
+  // from a freshly extracted runtime. Keep the probe bounded, but do not make
+  // first-run installation depend on an already-warm Python DLL cache.
+  probe: async ({ pythonPath, timeoutMs = 15000, signal }) => {
+    const probeTimeoutMs = Math.max(Number(timeoutMs) || 15000, 60000);
+    const runtimeDirectory = path.dirname(pythonPath);
+    const runtimeDllPaths = [
+      runtimeDirectory,
+      path.join(runtimeDirectory, 'DLLs'),
+      path.join(runtimeDirectory, 'Lib', 'site-packages', 'torch', 'lib'),
+      path.join(runtimeDirectory, 'Lib', 'site-packages', 'llvmlite', 'binding'),
+      path.join(runtimeDirectory, 'Lib', 'site-packages', 'llvmlite.libs'),
+      path.join(runtimeDirectory, 'Lib', 'site-packages', 'numpy.libs'),
+    ].filter((candidate) => fs.existsSync(candidate));
+    const probeEnv = {
+      ...process.env,
+      PATH: [...runtimeDllPaths, process.env.PATH || ''].filter(Boolean).join(path.delimiter),
+      PYTHONNOUSERSITE: '1',
+    };
+    let result = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      result = await runBreezeRuntimeProbe({ command: pythonPath, timeoutMs: probeTimeoutMs, signal, env: probeEnv });
+      if (result.ok || result.cancelled || result.timedOut || signal?.aborted) return result;
+      if (!/DLL load failed|ImportError/i.test(`${result.stderr || ''}\n${result.stdout || ''}`)) return result;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return result;
+  },
+});
+let whisperModelInspectionCache = null;
+let whisperModelInspectionAt = 0;
+const ASS_PLAY_RES_X = 1920;
+const ASS_PLAY_RES_Y = 1080;
+
+const defaultSettings = {
+  appLanguage: 'zh-TW',
+  projectFolder: defaultJobsDir,
+  importFolder: '',
+  exportFolder: '',
+  ai: {
+    enabled: false,
+    provider: 'openai-compatible',
+    baseUrl: 'https://api.openai.com/v1',
+    model: '',
+    batchSize: 30,
+    language: 'zh-TW',
+    timeoutSeconds: 60,
+    maxRetries: 3,
+    retryBaseMs: 1000,
+    deployment: '',
+    apiVersion: '2024-12-01-preview',
+    consentGrantedAt: '',
+    profiles: {},
+    instructions: '修正錯字與標點，保留原意；專有名詞使用一致寫法，不確定的內容不要自行補寫。',
+  },
+};
+
+let appSettings = loadSettings();
+fs.mkdirSync(getJobsDir(), { recursive: true });
 
 function sendJson(res, status, value) {
   const body = JSON.stringify(value, null, 2);
@@ -53,17 +184,112 @@ function sendText(res, status, text) {
   res.end(text);
 }
 
-function readRequest(req) {
+function readRequest(req, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    let timer = null;
+    req.on('data', (chunk) => {
+      chunks.push(chunk);
+      if (chunks.reduce((sum, c) => sum + c.length, 0) > 2 * 1024 * 1024 * 1024) {
+        clearTimeout(timer);
+        reject(new Error('Request body too large (max 2GB)'));
+      }
+    });
+    timer = setTimeout(() => {
+      reject(new Error('Request timeout'));
+    }, timeoutMs);
+    req.on('end', () => {
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
 async function readJsonBody(req) {
   return JSON.parse((await readRequest(req)).toString('utf8') || '{}');
+}
+
+function streamMultipart(req, tempDir) {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(tempDir, { recursive: true });
+    const fields = {};
+    const files = {};
+    const writes = [];
+    const tempPaths = [];
+    let settled = false;
+    const cleanup = () => tempPaths.forEach((filePath) => {
+      try { fs.unlinkSync(filePath); } catch {}
+    });
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    let parser;
+    try {
+      parser = Busboy({
+        headers: req.headers,
+        limits: { files: 4, fields: 50, fieldSize: 1024 * 1024, fileSize: 2 * 1024 * 1024 * 1024 },
+      });
+    } catch (error) {
+      fail(error);
+      return;
+    }
+
+    parser.on('field', (name, value) => {
+      fields[name] = value.trim();
+    });
+    parser.on('file', (name, file, info) => {
+      const submittedName = String(info.filename || '').trim();
+      if (!submittedName) {
+        file.resume();
+        return;
+      }
+      const filename = uploadedFileName(submittedName);
+      const tempPath = path.join(tempDir, `${crypto.randomUUID()}-${filename}`);
+      const output = fs.createWriteStream(tempPath, { flags: 'wx' });
+      tempPaths.push(tempPath);
+      let size = 0;
+      file.on('data', (chunk) => { size += chunk.length; });
+      file.on('limit', () => fail(new Error(`檔案過大：${filename}（上限 2GB）`)));
+      file.on('error', fail);
+      output.on('error', fail);
+      const completed = new Promise((resolveWrite, rejectWrite) => {
+        output.on('finish', () => {
+          if (size > 0) {
+            files[name] = { filename, path: tempPath, size, mimeType: info.mimeType };
+          } else {
+            try { fs.unlinkSync(tempPath); } catch {}
+          }
+          resolveWrite();
+        });
+        output.on('error', rejectWrite);
+      });
+      writes.push(completed);
+      file.pipe(output);
+    });
+    parser.on('filesLimit', () => fail(new Error('上傳檔案數量超過限制')));
+    parser.on('fieldsLimit', () => fail(new Error('表單欄位數量超過限制')));
+    parser.on('error', fail);
+    parser.on('close', async () => {
+      if (settled) return;
+      try {
+        await Promise.all(writes);
+        settled = true;
+        resolve({ fields, files, cleanup });
+      } catch (error) {
+        fail(error);
+      }
+    });
+    req.on('aborted', () => fail(new Error('上傳已中斷')));
+    req.pipe(parser);
+  });
 }
 
 function writeJson(filePath, value) {
@@ -72,6 +298,477 @@ function writeJson(filePath, value) {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+}
+
+function looksLikeMojibake(value) {
+  return /[\u0080-\u00ff]/.test(String(value || ''));
+}
+
+function cjkCount(value) {
+  return (String(value || '').match(/[\u3400-\u9fff]/g) || []).length;
+}
+
+function decodeMojibakeText(value) {
+  let current = String(value || '');
+  for (let attempt = 0; attempt < 3 && looksLikeMojibake(current); attempt += 1) {
+    const decoded = Buffer.from(current, 'latin1').toString('utf8');
+    if (decoded.includes('\uFFFD')) break;
+    const currentScore = cjkCount(current) * 4 - (current.match(/[\u0080-\u00ff]/g) || []).length;
+    const decodedScore = cjkCount(decoded) * 4 - (decoded.match(/[\u0080-\u00ff]/g) || []).length;
+    if (decodedScore <= currentScore) break;
+    current = decoded;
+  }
+  return current;
+}
+
+function displayFileName(value) {
+  return decodeMojibakeText(String(value || ''));
+}
+
+function uploadedFileName(value, fallback = 'upload.bin') {
+  const rawName = String(value || '').trim().split(/[\\/]/).filter(Boolean).pop() || fallback;
+  const decoded = decodeMojibakeText(rawName);
+  const cleaned = decoded
+    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '');
+  return cleaned || fallback;
+}
+
+function resolveToolsInfo() {
+  const candidates = [
+    process.env.OFFLINE_SUBTITLE_TOOLS_DIR,
+    path.join(appDir, 'tools'),
+    path.resolve(appDir, '..', 'tools'),
+  ]
+    .filter(Boolean)
+    .map((candidate) => path.resolve(candidate));
+
+  const uniqueCandidates = [...new Set(candidates)];
+  const selected = uniqueCandidates.find((candidate) => hasAnyTool(candidate)) || uniqueCandidates[0] || defaultToolsDir;
+  return buildToolsInfo(selected, uniqueCandidates);
+}
+
+function hasAnyTool(candidate) {
+  return [
+    path.join(candidate, 'python', 'python.exe'),
+    path.join(candidate, 'python', 'python'),
+    path.join(candidate, 'python-embed', 'python.exe'),
+    path.join(candidate, 'python-embed', 'python'),
+    path.join(candidate, 'python-venv', 'Scripts', 'python.exe'),
+    path.join(candidate, 'python-venv', 'bin', 'python'),
+    path.join(candidate, 'ffmpeg', 'bin', 'ffmpeg.exe'),
+    path.join(candidate, 'ffmpeg', 'bin', 'ffmpeg'),
+    path.join(candidate, 'whisper-cpp', 'whisper-cli.exe'),
+    path.join(candidate, 'whisper-cpp', 'whisper-cli'),
+    path.join(candidate, 'node', 'node.exe'),
+  ].some((filePath) => fs.existsSync(filePath));
+}
+
+function firstExisting(paths, fallback = paths[0]) {
+  return paths.find((filePath) => fs.existsSync(filePath)) || fallback;
+}
+
+function buildToolsInfo(selectedToolsDir, candidates) {
+  const pythonBinary = process.platform === 'win32' ? 'python.exe' : 'python';
+  const pythonCandidates = [
+    path.join(selectedToolsDir, 'python', pythonBinary),
+    path.join(selectedToolsDir, 'python-embed', pythonBinary),
+    path.join(selectedToolsDir, 'python-venv', process.platform === 'win32' ? 'Scripts' : 'bin', pythonBinary),
+  ].filter(Boolean);
+  const whisperCppCandidates = [
+    path.join(selectedToolsDir, 'whisper-cpp', process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli'),
+  ];
+  const paths = {
+    node: firstExisting([
+      path.join(selectedToolsDir, 'node', 'node.exe'),
+      process.execPath,
+    ]),
+    ffmpeg: firstExisting([
+      path.join(selectedToolsDir, 'ffmpeg', 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+      'ffmpeg',
+    ]),
+    ffprobe: firstExisting([
+      path.join(selectedToolsDir, 'ffmpeg', 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'),
+      'ffprobe',
+    ]),
+    python: firstExisting(pythonCandidates, process.platform === 'win32' ? 'python' : 'python3'),
+    breezePython: resolveBreezePython({ env: process.env, toolsDir: selectedToolsDir, platform: process.platform }),
+    whisper: 'python -m whisper',
+    whisperCpp: firstExisting(whisperCppCandidates),
+    whisperModels: process.env.WHISPER_CACHE || path.join(selectedToolsDir, 'whisper-models'),
+    whisperModelCache: process.env.WHISPER_MODEL_CACHE_DIR || path.join(settingsDir, 'whisper-models'),
+    breezeModelCache: process.env.BREEZE_ASR_MODEL_DIR || path.join(settingsDir, 'breeze-asr'),
+    whisperCppModel: path.join(selectedToolsDir, 'whisper-models', 'ggml-tiny.bin'),
+    manifest: path.join(selectedToolsDir, 'manifest.json'),
+  };
+  return {
+    toolsDir: selectedToolsDir,
+    candidates,
+    paths,
+    manifest: loadToolsManifest(path.join(selectedToolsDir, 'manifest.json')),
+  };
+}
+
+function loadToolsManifest(manifestPath) {
+  try {
+    if (!fs.existsSync(manifestPath)) return null;
+    return readJson(manifestPath);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeFolder(value) {
+  const text = String(value || '').trim();
+  return text ? path.resolve(text) : '';
+}
+
+function loadSettings() {
+  try {
+    if (!fs.existsSync(settingsPath)) return { ...defaultSettings };
+    return normalizeSettings(readJson(settingsPath));
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function normalizeSettings(value = {}) {
+  return {
+    appLanguage: ['zh-TW', 'en'].includes(value.appLanguage) ? value.appLanguage : defaultSettings.appLanguage,
+    projectFolder: normalizeFolder(value.projectFolder) || defaultSettings.projectFolder,
+    importFolder: normalizeFolder(value.importFolder),
+    exportFolder: normalizeFolder(value.exportFolder),
+    ai: normalizeAiSettings(value.ai),
+  };
+}
+
+function normalizeAiSettings(value = {}) {
+  const provider = isSupportedProvider(value.provider) ? value.provider : defaultSettings.ai.provider;
+  const providerDefaultBaseUrl = PROVIDER_DEFAULT_BASE_URLS[provider] ?? defaultSettings.ai.baseUrl;
+  const localProvider = isLocalAiProvider(provider);
+  let baseUrl = String(Object.hasOwn(value, 'baseUrl') ? value.baseUrl : providerDefaultBaseUrl).trim().replace(/\/+$/, '');
+  let model = String(value.model || '').trim();
+  const looksLikeGeminiSetting = /generativelanguage\.googleapis\.com/i.test(baseUrl) || /(^|[-_.])gemini([-.0-9]|$)/i.test(model);
+  if (provider === 'openai-compatible' && looksLikeGeminiSetting) {
+    baseUrl = providerDefaultBaseUrl;
+    model = '';
+  }
+  return {
+    enabled: Boolean(value.enabled),
+    provider,
+    baseUrl,
+    model,
+    batchSize: clampNumber(value.batchSize, 1, localProvider ? 20 : 100, localProvider ? 8 : defaultSettings.ai.batchSize),
+    language: normalizeLanguageTag(value.language, defaultSettings.ai.language),
+    timeoutSeconds: clampNumber(value.timeoutSeconds, 10, 300, defaultSettings.ai.timeoutSeconds),
+    maxRetries: clampNumber(value.maxRetries, 0, 8, defaultSettings.ai.maxRetries),
+    retryBaseMs: clampNumber(value.retryBaseMs, 100, 10000, defaultSettings.ai.retryBaseMs),
+    deployment: String(value.deployment || '').trim(),
+    apiVersion: String(value.apiVersion || defaultSettings.ai.apiVersion).trim(),
+    consentGrantedAt: String(value.consentGrantedAt || '').trim(),
+    profiles: value.profiles && typeof value.profiles === 'object' ? value.profiles : {},
+    instructions: String(value.instructions || defaultSettings.ai.instructions).trim(),
+  };
+}
+
+function readAiSecrets() {
+  try { return readJson(aiSecretsPath); } catch { return {}; }
+}
+
+function readAiApiKey(provider = appSettings.ai.provider) {
+  const environmentKey = String(process.env.SUBTITLE_AI_API_KEY || '').trim();
+  if (environmentKey) return environmentKey;
+  if (runtimeAiKeys[provider]) return runtimeAiKeys[provider];
+  const secrets = readAiSecrets();
+  return String(secrets.providers?.[provider] || secrets.apiKey || '').trim();
+}
+
+function saveAiApiKey(apiKey, provider = appSettings.ai.provider) {
+  const value = String(apiKey || '').trim();
+  if (!value) return;
+  runtimeAiKeys[provider] = value;
+  const secrets = readAiSecrets();
+  writeJson(aiSecretsPath, { providers: { ...(secrets.providers || {}), [provider]: value } });
+  try { fs.chmodSync(aiSecretsPath, 0o600); } catch {}
+}
+
+function clearAiApiKey(provider = appSettings.ai.provider) {
+  delete runtimeAiKeys[provider];
+  const secrets = readAiSecrets();
+  const providers = { ...(secrets.providers || {}) };
+  delete providers[provider];
+  if (Object.keys(providers).length) writeJson(aiSecretsPath, { providers });
+  else if (fs.existsSync(aiSecretsPath)) fs.unlinkSync(aiSecretsPath);
+}
+
+function publicAiSettings() {
+  const provider = appSettings.ai.provider;
+  const { profiles, ...settings } = appSettings.ai;
+  const privacy = aiEndpointPrivacy(settings.baseUrl);
+  return {
+    ...settings,
+    endpointPrivacy: privacy,
+    requiresApiKey: privacy !== 'local',
+    hasApiKey: Boolean(readAiApiKey(provider)),
+    keySource: process.env.SUBTITLE_AI_API_KEY ? 'environment' : (runtimeAiKeys[provider] ? 'runtime' : (readAiApiKey(provider) ? 'encrypted-or-legacy' : 'none')),
+    providers: listProviderDefinitions(),
+  };
+}
+
+function aiProviderConfig() {
+  const provider = appSettings.ai.provider;
+  const profile = appSettings.ai.profiles?.[provider] || {};
+  return { ...appSettings.ai, ...profile, provider, apiKey: readAiApiKey(provider), capabilities: PROVIDER_CAPABILITIES[provider] };
+}
+
+async function discoverLocalAiServices() {
+  const results = await Promise.all(localAiCandidates().map(async (candidate) => {
+    try {
+      const models = await createProvider({
+        provider: candidate.provider,
+        baseUrl: candidate.baseUrl,
+        apiKey: '',
+        timeoutSeconds: 2,
+      }).listModels();
+      return {
+        provider: candidate.provider,
+        label: candidate.label,
+        baseUrl: candidate.baseUrl,
+        available: true,
+        models: models.map((model) => String(model?.id || '')).filter(Boolean),
+      };
+    } catch (error) {
+      return {
+        provider: candidate.provider,
+        label: candidate.label,
+        baseUrl: candidate.baseUrl,
+        available: false,
+        models: [],
+        error: String(error?.message || '無法連線').slice(0, 200),
+      };
+    }
+  }));
+  return results;
+}
+
+function getProjectAiSettingsPath(job) { return path.join(job.jobRoot, 'ai-output', 'project-settings.json'); }
+function loadProjectAiSettings(job) {
+  try { return normalizeProjectAiSettings(readJson(getProjectAiSettingsPath(job))); } catch { return normalizeProjectAiSettings(); }
+}
+function saveProjectAiSettings(job, value) {
+  const settings = normalizeProjectAiSettings(value);
+  fs.mkdirSync(path.dirname(getProjectAiSettingsPath(job)), { recursive: true });
+  writeJson(getProjectAiSettingsPath(job), settings);
+  return settings;
+}
+
+function getAiCheckpointPath(job) {
+  return path.join(job.jobRoot, 'ai-output', 'checkpoint.json');
+}
+
+function publicAiRecord(record) {
+  if (!record) return null;
+  return {
+    sessionId: record.sessionId,
+    provider: record.provider || appSettings.ai.provider,
+    model: record.model || appSettings.ai.model,
+    status: record.status,
+    progress: record.progress,
+    result: record.result,
+    error: record.error,
+    retryable: Boolean(record.retryable),
+    startedAt: record.startedAt,
+    updatedAt: record.updatedAt,
+    completedAt: record.completedAt,
+  };
+}
+
+function persistAiRecord(job, record) {
+  const checkpointPath = getAiCheckpointPath(job);
+  fs.mkdirSync(path.dirname(checkpointPath), { recursive: true });
+  record.updatedAt = new Date().toISOString();
+  writeJson(checkpointPath, {
+    ...publicAiRecord(record),
+    request: record.request,
+    checkpoint: record.checkpoint,
+  });
+}
+
+function loadAiRecord(job) {
+  const checkpointPath = getAiCheckpointPath(job);
+  if (!fs.existsSync(checkpointPath)) return null;
+  try {
+    const record = readJson(checkpointPath);
+    if (record.status === 'running') {
+      record.status = 'interrupted';
+      record.error = '應用程式先前在 AI 優化期間關閉，可從已完成批次繼續';
+      record.retryable = true;
+      persistAiRecord(job, record);
+    }
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function sessionDir(job, sessionId) { return path.join(job.jobRoot, 'ai-output', 'sessions', String(sessionId)); }
+function sessionPath(job, sessionId) { return path.join(sessionDir(job, sessionId), 'session.json'); }
+function writeAiSession(job, record) {
+  const dir = sessionDir(job, record.sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  const sourceById = new Map(record.request.cues.map((cue) => [String(cue.id), cue]));
+  const suggestions = record.result?.suggestions || [];
+  const session = {
+    sessionId: record.sessionId,
+    createdAt: record.startedAt,
+    completedAt: record.completedAt,
+    provider: record.provider,
+    model: record.model,
+    mode: record.request.mode || 'proofread',
+    source: record.request.cues,
+    suggestions,
+    decisions: Object.fromEntries(suggestions.map((item) => [String(item.id), 'pending'])),
+    statistics: { processed: record.result?.totalCues || 0, modified: suggestions.length, accepted: 0, skipped: 0, failed: 0 },
+  };
+  writeJson(sessionPath(job, record.sessionId), session);
+  writeJson(path.join(dir, 'suggestions.json'), { sessionId: record.sessionId, suggestions });
+  const preview = record.request.cues.map((cue, index) => {
+    const suggestion = suggestions.find((item) => String(item.id) === String(cue.id));
+    return `${index + 1}\n${cue.start} --> ${cue.end}\n${suggestion?.text || cue.text}`;
+  }).join('\n\n');
+  fs.writeFileSync(path.join(dir, 'optimized-preview.srt'), `${preview}\n`, 'utf8');
+  const report = [
+    `# AI 字幕優化報告 ${record.sessionId}`,
+    '', `- 供應商：${session.provider}`, `- 模型：${session.model}`, `- 模式：${session.mode}`,
+    `- 處理：${session.statistics.processed}`, `- 修改建議：${session.statistics.modified}`,
+    '', '## 修改摘要', '',
+    ...suggestions.map((item) => `- Cue ${item.id}: ${String(sourceById.get(String(item.id))?.text || '').replace(/\s+/g, ' ')} → ${item.text.replace(/\s+/g, ' ')}`),
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, 'REPORT.md'), `${report}\n`, 'utf8');
+  return session;
+}
+
+function loadAiSession(job, sessionId) { return readJson(sessionPath(job, sessionId)); }
+function listAiSessions(job) {
+  const root = path.join(job.jobRoot, 'ai-output', 'sessions');
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => {
+    try { return loadAiSession(job, entry.name); } catch { return null; }
+  }).filter(Boolean).sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
+}
+
+function updateAiSessionDecisions(job, sessionId, decisions = {}) {
+  const session = loadAiSession(job, sessionId);
+  session.decisions = { ...session.decisions, ...decisions };
+  const values = Object.values(session.decisions);
+  session.statistics.accepted = values.filter((value) => value === 'accepted').length;
+  session.statistics.skipped = values.filter((value) => value === 'skipped').length;
+  writeJson(sessionPath(job, sessionId), session);
+  return session;
+}
+
+function sessionTextChanges(job, sessionId, currentCues, direction) {
+  const session = loadAiSession(job, sessionId);
+  const current = new Map((currentCues || []).map((cue) => [String(cue.id), String(cue.text || '')]));
+  const changes = [];
+  const conflicts = [];
+  for (const suggestion of session.suggestions || []) {
+    const id = String(suggestion.id);
+    if (session.decisions?.[id] !== 'accepted') continue;
+    const expected = direction === 'undo' ? suggestion.text : suggestion.original;
+    const replacement = direction === 'undo' ? suggestion.original : suggestion.text;
+    if (current.get(id) === expected) changes.push({ id: suggestion.id, text: replacement });
+    else conflicts.push({ id: suggestion.id, current: current.get(id) || '', expected });
+  }
+  return { sessionId, direction, changes, conflicts };
+}
+
+function startAiOptimizationJob(job, payload, previous = null) {
+  const jobId = job.config.jobId;
+  const config = aiProviderConfig();
+  if (!config.enabled) throw new Error('AI 字幕優化尚未啟用');
+  if (!config.model) throw new Error('AI 模型尚未設定');
+  if (!config.apiKey && !isLoopbackAiUrl(config.baseUrl)) throw new Error('AI API Key 尚未設定');
+  if (config.provider === 'azure' && !config.deployment) throw new Error('Azure Deployment 尚未設定');
+  if (!config.consentGrantedAt && !isLoopbackAiUrl(config.baseUrl)) throw new Error('首次使用雲端 AI 前必須確認資料傳送同意');
+  const request = previous?.request || payload;
+  if (!Array.isArray(request?.cues) || request.cues.length === 0) throw new Error('Missing subtitle cues');
+  request.language = canonicalizeLanguageTag(request.language || config.language);
+  const batchSize = Math.max(1, Number(config.batchSize) || 30);
+  const controller = new AbortController();
+  const record = {
+    sessionId: previous?.sessionId || crypto.randomUUID(),
+    status: 'running',
+    progress: previous?.progress || { completedBatches: 0, totalBatches: Math.ceil(request.cues.length / batchSize), processedCues: 0, totalCues: request.cues.length, totalRetries: 0 },
+    checkpoint: previous?.checkpoint || { nextBatchIndex: 0, suggestions: [], totalRetries: 0 },
+    request,
+    provider: config.provider,
+    model: config.model,
+    controller,
+    startedAt: previous?.startedAt || new Date().toISOString(),
+    error: null,
+    retryable: false,
+  };
+  aiOptimizationJobs.set(jobId, record);
+  persistAiRecord(job, record);
+  const provider = createProvider(config);
+  const complete = (body, signal, requestOptions) => provider.optimize(body, signal, requestOptions);
+  complete.progress = (progress) => {
+    record.progress = progress;
+    persistAiRecord(job, record);
+  };
+  optimizeSubtitleCues({
+    cues: request.cues,
+    config,
+    mode: request.mode,
+    instructions: request.instructions,
+    promptTemplate: loadProjectAiSettings(job).prompts[request.mode],
+    glossary: loadProjectAiSettings(job).glossary,
+    search: request.search,
+    language: request.language || config.language,
+    signal: controller.signal,
+    complete,
+    checkpoint: record.checkpoint,
+    onCheckpoint: async (checkpoint) => {
+      record.checkpoint = checkpoint;
+      record.progress = checkpoint.progress;
+      persistAiRecord(job, record);
+    },
+  }).then((result) => {
+    record.status = 'completed';
+    record.result = result;
+    record.progress = { ...record.progress, completedBatches: result.totalBatches, processedCues: result.totalCues, totalRetries: result.totalRetries };
+    record.completedAt = new Date().toISOString();
+    delete record.controller;
+    writeAiSession(job, record);
+    persistAiRecord(job, record);
+  }).catch((error) => {
+    record.status = controller.signal.aborted ? 'cancelled' : 'failed';
+    record.retryable = record.checkpoint.nextBatchIndex > 0 || (!controller.signal.aborted && Boolean(error.retryable));
+    const completed = Number(record.checkpoint.nextBatchIndex || 0);
+    const total = Number(record.progress.totalBatches || 0);
+    record.error = completed > 0 && error?.code === 'timeout'
+      ? `${error.message}；已保留 ${completed}/${total} 批，可按「恢復 AI 優化」繼續`
+      : error.message;
+    delete record.controller;
+    persistAiRecord(job, record);
+  });
+  return record;
+}
+
+function saveSettings(nextSettings) {
+  appSettings = normalizeSettings({ ...appSettings, ...nextSettings });
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.mkdirSync(getJobsDir(), { recursive: true });
+  writeJson(settingsPath, appSettings);
+  jobsListCache = null;
+  return appSettings;
+}
+
+function getJobsDir() {
+  return appSettings?.projectFolder || defaultJobsDir;
 }
 
 function parseMultipart(buffer, contentType = '') {
@@ -94,7 +791,7 @@ function parseMultipart(buffer, contentType = '') {
     const body = Buffer.from(bodyLatin1, 'latin1');
     const value = body.subarray(0, body.length >= 2 && body.at(-2) === 13 && body.at(-1) === 10 ? body.length - 2 : body.length);
     if (filename) {
-      files[name] = { filename: path.basename(filename), buffer: value };
+      files[name] = { filename: uploadedFileName(filename), buffer: value };
     } else {
       fields[name] = value.toString('utf8').trim();
     }
@@ -103,7 +800,7 @@ function parseMultipart(buffer, contentType = '') {
 }
 
 function loadJob(jobId) {
-  const jobRoot = path.join(jobsDir, jobId);
+  const jobRoot = path.join(getJobsDir(), jobId);
   const configPath = path.join(jobRoot, 'job-config.json');
   const statusPath = path.join(jobRoot, 'job-status.json');
   if (!fs.existsSync(configPath) || !fs.existsSync(statusPath)) return null;
@@ -112,6 +809,46 @@ function loadJob(jobId) {
     config: readJson(configPath),
     status: readJson(statusPath),
   };
+}
+
+function listJobs() {
+  if (jobsListCache) return jobsListCache;
+  const jobsDir = getJobsDir();
+  if (!fs.existsSync(jobsDir)) return [];
+  jobsListCache = fs.readdirSync(jobsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const job = loadJob(entry.name);
+      if (!job) return null;
+      const reviewOutputDir = path.join(job.jobRoot, 'review-output');
+      const outputDir = path.join(job.jobRoot, 'output');
+      const videoName = job.config.files?.video || '';
+      const ruleName = job.config.files?.ruleFile || '';
+      return {
+        jobId: job.config.jobId || entry.name,
+        status: job.status.status || 'unknown',
+        stage: job.status.stage || 'unknown',
+        progress: Number(job.status.progress || 0),
+        message: job.status.message || '',
+        createdAt: job.config.createdAt || '',
+        updatedAt: job.status.updatedAt || job.config.createdAt || '',
+        language: job.config.language || '',
+        files: {
+          video: displayFileName(videoName),
+          ruleFile: displayFileName(ruleName),
+          existingSrt: job.config.files?.existingSrt ? displayFileName(job.config.files.existingSrt) : null,
+        },
+        hasReviewed: fs.existsSync(path.join(reviewOutputDir, 'reviewed.srt')),
+        hasTrim: Boolean(readEditPlan(job.jobRoot)?.appliedAt && fs.existsSync(getEditPaths(job.jobRoot).trimmed)),
+        trimUrl: `/trim/${job.config.jobId || entry.name}`,
+        hasBurnSettings: fs.existsSync(path.join(reviewOutputDir, 'burn-settings.json')),
+        hasOutput: fs.existsSync(outputDir) && fs.readdirSync(outputDir).some((name) => /\.(mp4|mkv|srt|vtt)$/i.test(name)),
+        outputFolder: relativeToApp(outputDir),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  return jobsListCache;
 }
 
 function saveStatus(job) {
@@ -123,6 +860,7 @@ function updateJob(job, patch, log) {
   const cleanLog = sanitizeLog(log);
   if (cleanLog) job.status.logs = [...(job.status.logs || []), cleanLog].slice(-120);
   saveStatus(job);
+  jobsListCache = null;
 }
 
 function sanitizeLog(value) {
@@ -139,9 +877,12 @@ function sanitizeLog(value) {
 }
 
 function createJob({ fields, files }) {
+  if (!files.video || Number(files.video.size || 0) <= 0) {
+    throw new Error('請選擇有效的影片或音訊檔案');
+  }
   const stamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
   const jobId = `${stamp}-${crypto.randomBytes(3).toString('hex')}`;
-  const jobRoot = path.join(jobsDir, jobId);
+  const jobRoot = path.join(getJobsDir(), jobId);
   const inputDir = path.join(jobRoot, 'input');
   const workingDir = path.join(jobRoot, 'working');
   const reviewOutputDir = path.join(jobRoot, 'review-output');
@@ -149,16 +890,20 @@ function createJob({ fields, files }) {
   const logsDir = path.join(jobRoot, 'logs');
   for (const dir of [inputDir, workingDir, reviewOutputDir, outputDir, logsDir]) fs.mkdirSync(dir, { recursive: true });
 
-  if (files.video) fs.writeFileSync(path.join(inputDir, files.video.filename || 'media.mp4'), files.video.buffer);
-  if (files.ruleFile) fs.writeFileSync(path.join(inputDir, files.ruleFile.filename || 'rule.txt'), files.ruleFile.buffer);
-  if (files.existingSrt) fs.writeFileSync(path.join(inputDir, files.existingSrt.filename || 'source.srt'), files.existingSrt.buffer);
+  stageUploadedFile(files.video, path.join(inputDir, files.video?.filename || 'media.mp4'));
+  stageUploadedFile(files.ruleFile, path.join(inputDir, files.ruleFile?.filename || 'rule.txt'));
+  stageUploadedFile(files.existingSrt, path.join(inputDir, files.existingSrt?.filename || 'source.srt'));
 
   const config = {
     jobId,
     createdAt: new Date().toISOString(),
     language: fields.language || 'zh-TW',
-    asrEngine: fields.asrEngine || 'manual',
-    modelName: fields.modelName || '',
+    asrEngine: [BREEZE_ASR_ENGINE, 'manual'].includes(fields.asrEngine) ? fields.asrEngine : 'whisper-cpp',
+    modelName: normalizeWhisperModelName(fields.modelName),
+    performancePreset: ['fast', 'balanced', 'accurate'].includes(fields.performancePreset)
+      ? fields.performancePreset
+      : 'balanced',
+    cpuThreads: Math.min(64, Math.max(0, Number(fields.cpuThreads) || 0)),
     outputFormats: fields.outputFormats || 'srt,vtt',
     requirements: fields.requirements || '',
     files: {
@@ -180,82 +925,865 @@ function createJob({ fields, files }) {
   };
   writeJson(path.join(jobRoot, 'job-config.json'), config);
   writeJson(path.join(jobRoot, 'job-status.json'), status);
+  jobsListCache = null;
   return { jobId, folder: jobRoot, status };
 }
 
-function commandExists(command, args = ['--version']) {
-  return new Promise((resolve) => {
-    if (!fs.existsSync(command)) {
-      resolve(false);
-      return;
+function stageUploadedFile(file, destination) {
+  if (!file) return;
+  if (file.path) {
+    try {
+      fs.renameSync(file.path, destination);
+    } catch (error) {
+      if (error.code !== 'EXDEV') throw error;
+      fs.copyFileSync(file.path, destination);
+      fs.unlinkSync(file.path);
     }
-    const child = spawn(command, args, { shell: false, stdio: 'ignore' });
-    child.on('exit', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
+    return;
+  }
+  if (file.buffer) fs.writeFileSync(destination, file.buffer);
 }
 
-async function healthCheck() {
-  const [hasNode, hasFfmpeg, hasPython, hasWhisper] = await Promise.all([
+function commandExists(command, args = ['--version'], timeoutMs = 10000) {
+  return probeCommand(command, args, timeoutMs);
+}
+
+async function getBasicToolsStatus(force = false) {
+  const now = Date.now();
+  if (!force && basicToolsCache && now - basicToolsCache.checkedAt < basicToolsCacheTtlMs) {
+    return basicToolsCache;
+  }
+  if (!force && basicToolsPromise) return basicToolsPromise;
+  basicToolsPromise = Promise.all([
     commandExists(toolPaths.node),
     commandExists(toolPaths.ffmpeg, ['-version']),
     commandExists(toolPaths.python),
     commandExists(toolPaths.python, ['-c', 'import whisper; print("ok")']),
-  ]);
+    breezeTestRunner ? Promise.resolve(true) : commandExists(toolPaths.breezePython, buildBreezeRuntimeProbeArgs(), 15000),
+    commandExists(toolPaths.whisperCpp, ['--help']),
+  ]).then(async ([node, ffmpeg, python, pythonWhisper, breezeRuntime, whisperCpp]) => {
+    const whisperModels = inspectWhisperModelsWithCache();
+    const breezeModel = await inspectBreezeAsrModel(toolPaths.breezeModelCache, { allowMock: allowMockBreezeModel });
+    const whisperCppModel = whisperModels.tiny.valid;
+    const whisper = pythonWhisper || (whisperCpp && whisperCppModel);
+    const asrEngine = pythonWhisper ? 'openai-whisper' : whisperCpp && whisperCppModel ? 'whisper.cpp' : '';
+    basicToolsCache = { node, ffmpeg, python, pythonWhisper, breezeRuntime, breezeModel, whisperCpp, whisperCppModel, whisperModels, whisper, asrEngine, checkedAt: Date.now() };
+    return basicToolsCache;
+  }).finally(() => { basicToolsPromise = null; });
+  return basicToolsPromise;
+}
+
+function whisperModelsManifest() {
+  return mergeWhisperModelManifest(toolsInfo.manifest || {});
+}
+
+function inspectWhisperModelWithCache(modelName) {
+  return inspectWhisperModelsWithCache()[normalizeWhisperModelName(modelName)];
+}
+
+function inspectWhisperModelsWithCache() {
+  const now = Date.now();
+  if (whisperModelInspectionCache && now - whisperModelInspectionAt < whisperModelInspectionCacheTtlMs) {
+    return whisperModelInspectionCache;
+  }
+  whisperModelInspectionCache = inspectWhisperModels({
+    modelsDir: toolPaths.whisperModelCache,
+    fallbackModelsDirs: [toolPaths.whisperModels],
+    manifest: whisperModelsManifest(),
+  });
+  whisperModelInspectionAt = now;
+  return whisperModelInspectionCache;
+}
+
+function invalidateWhisperModelInspectionCache() {
+  whisperModelInspectionCache = null;
+  whisperModelInspectionAt = 0;
+}
+
+function getWhisperModelStatusPayload() {
+  const inspected = inspectWhisperModelsWithCache();
+  const downloads = Object.fromEntries(listWhisperModelDownloads().map((definition) => {
+    const active = whisperModelDownloadJobs.get(definition.name);
+    const model = inspected[definition.name];
+    const status = active?.status || (model.valid ? 'installed' : 'missing');
+    return [definition.name, {
+      ...model,
+      status,
+      download: {
+        available: true,
+        url: definition.url,
+        size: definition.size,
+        sha256: definition.sha256,
+        revision: definition.url.match(/resolve\/([^/]+)/)?.[1] || '',
+      },
+      progress: active?.progress ?? (model.valid ? 100 : 0),
+      bytesDownloaded: active?.bytesDownloaded ?? (model.valid ? definition.size : 0),
+      totalBytes: definition.size,
+      message: active?.message || (model.valid ? '模型已安裝' : '尚未安裝，可下載或手動匯入'),
+      error: active?.error || null,
+    }];
+  }));
+  return downloads;
+}
+
+function startWhisperModelDownload(modelName) {
+  const definition = getWhisperModelDownloadDefinition(modelName);
+  if (!definition) throw new Error(`不支援的 Whisper 模型：${modelName || ''}`);
+  const current = whisperModelDownloadJobs.get(definition.name);
+  if (current?.status === 'downloading') return current;
+  const inspected = inspectWhisperModelWithCache(definition.name);
+  if (inspected.valid) {
+    const completed = { status: 'completed', modelName: definition.name, progress: 100, bytesDownloaded: definition.size, totalBytes: definition.size, message: '模型已安裝', error: null, updatedAt: new Date().toISOString() };
+    whisperModelDownloadJobs.set(definition.name, completed);
+    return completed;
+  }
+  const state = {
+    status: 'downloading',
+    modelName: definition.name,
+    progress: 0,
+    bytesDownloaded: 0,
+    totalBytes: definition.size,
+    message: `正在下載 Whisper ${definition.name.toUpperCase()} 模型`,
+    error: null,
+    updatedAt: new Date().toISOString(),
+    controller: new AbortController(),
+  };
+  whisperModelDownloadJobs.set(definition.name, state);
+  downloadWhisperModelFile({
+    definition,
+    modelsDir: toolPaths.whisperModelCache,
+    signal: state.controller.signal,
+    fetchImpl: usePartialWhisperDownloadFixture
+      ? async (_url, { signal } = {}) => {
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(Buffer.from('partial Whisper model fixture'));
+            const abort = () => controller.error(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            if (signal?.aborted) abort();
+            else signal?.addEventListener('abort', abort, { once: true });
+          },
+        });
+        return new Response(body, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+      }
+      : globalThis.fetch,
+    onProgress: ({ bytesDownloaded, totalBytes, progress }) => {
+      state.bytesDownloaded = bytesDownloaded;
+      state.totalBytes = totalBytes;
+      state.progress = progress;
+      state.updatedAt = new Date().toISOString();
+    },
+  }).then(() => {
+    state.status = 'completed';
+    state.progress = 100;
+    state.bytesDownloaded = definition.size;
+    state.message = `Whisper ${definition.name.toUpperCase()} 模型已完成驗證並安裝`;
+    state.updatedAt = new Date().toISOString();
+    invalidateWhisperModelInspectionCache();
+    basicToolsCache = null;
+  }).catch((error) => {
+    if (error?.code === 'MODEL_DOWNLOAD_CANCELLED') {
+      state.status = 'cancelled';
+      state.progress = 0;
+      state.bytesDownloaded = 0;
+      state.error = null;
+      state.message = '模型下載已取消；可稍後重新下載';
+      state.updatedAt = new Date().toISOString();
+      return;
+    }
+    const wrapped = formatModelDownloadError(error, definition);
+    state.status = 'failed';
+    state.error = wrapped.message;
+    state.message = wrapped.message;
+    state.updatedAt = new Date().toISOString();
+  });
+  return state;
+}
+
+function cancelWhisperModelDownload(modelName) {
+  const definition = getWhisperModelDownloadDefinition(modelName);
+  if (!definition) throw new Error(`不支援的 Whisper 模型：${modelName || ''}`);
+  const current = whisperModelDownloadJobs.get(definition.name);
+  if (current?.status === 'downloading') {
+    current.status = 'cancelled';
+    current.progress = 0;
+    current.bytesDownloaded = 0;
+    current.error = null;
+    current.message = '模型下載已取消；可稍後重新下載';
+    current.updatedAt = new Date().toISOString();
+    current.controller?.abort(new Error('使用者取消模型下載'));
+  }
+  return current || null;
+}
+
+async function getBreezeModelStatusPayload(runtimeReady = false) {
+  const inspected = await inspectBreezeAsrModel(toolPaths.breezeModelCache, { allowMock: allowMockBreezeModel });
+  const status = inspected.valid ? 'installed' : (breezeModelDownloadJob?.status || 'missing');
   return {
-    ok: true,
-    node: process.version,
-    localToolsDir: toolsDir,
-    tools: { node: hasNode, ffmpeg: hasFfmpeg, python: hasPython, whisper: hasWhisper },
-    paths: toolPaths,
+    ...inspected,
+    status,
+    runtimeReady,
+    ready: inspected.valid && runtimeReady,
+    download: {
+      available: true,
+      url: BREEZE_ASR_MODEL.url,
+      size: BREEZE_ASR_MODEL.size,
+      sha256: BREEZE_ASR_MODEL.sha256,
+      revision: BREEZE_ASR_REVISION,
+    },
+    progress: breezeModelDownloadJob?.progress ?? (inspected.valid ? 100 : 0),
+    bytesDownloaded: breezeModelDownloadJob?.bytesDownloaded ?? (inspected.valid ? BREEZE_ASR_MODEL.size : 0),
+    totalBytes: BREEZE_ASR_MODEL.size,
+    message: breezeModelDownloadJob?.message || (inspected.valid
+      ? (runtimeReady ? 'Breeze ASR 25 模型與 runtime 已就緒' : '模型已安裝，但缺少 MediaTek patched Whisper runtime')
+      : '尚未安裝 Breeze ASR 25 模型'),
+    error: breezeModelDownloadJob?.error || null,
+    runtimeInstallGuide: breezeRuntimeInstallGuide(),
+    runtimeInstallGuideDetails: breezeRuntimeInstallGuideDetails(),
   };
 }
 
-async function startJob(jobId) {
-  if (runningJobs.has(jobId)) return;
-  const job = loadJob(jobId);
-  if (!job) return;
-  const promise = runJob(job).finally(() => runningJobs.delete(jobId));
-  runningJobs.set(jobId, promise);
+async function startBreezeModelDownload() {
+  if (breezeModelDownloadJob?.status === 'downloading') return breezeModelDownloadJob;
+  const inspected = await inspectBreezeAsrModel(toolPaths.breezeModelCache, { allowMock: allowMockBreezeModel });
+  if (inspected.valid) {
+    breezeModelDownloadJob = { status: 'completed', progress: 100, bytesDownloaded: BREEZE_ASR_MODEL.size, totalBytes: BREEZE_ASR_MODEL.size, message: 'Breeze ASR 25 模型已安裝', error: null, updatedAt: new Date().toISOString() };
+    return breezeModelDownloadJob;
+  }
+  const state = {
+    status: 'downloading',
+    progress: 0,
+    bytesDownloaded: 0,
+    totalBytes: BREEZE_ASR_MODEL.size,
+    message: '正在下載 Breeze ASR 25 模型',
+    error: null,
+    updatedAt: new Date().toISOString(),
+    controller: new AbortController(),
+  };
+  breezeModelDownloadJob = state;
+  downloadWhisperModelFile({
+    definition: BREEZE_ASR_MODEL,
+    modelsDir: toolPaths.breezeModelCache,
+    signal: state.controller.signal,
+    timeoutMs: 4 * 60 * 60 * 1000,
+    onProgress: ({ bytesDownloaded, totalBytes, progress }) => {
+      state.bytesDownloaded = bytesDownloaded;
+      state.totalBytes = totalBytes;
+      state.progress = progress;
+      state.updatedAt = new Date().toISOString();
+    },
+  }).then(() => {
+    state.status = 'completed';
+    state.progress = 100;
+    state.bytesDownloaded = BREEZE_ASR_MODEL.size;
+    state.message = 'Breeze ASR 25 模型已完成大小與 SHA-256 驗證';
+    state.updatedAt = new Date().toISOString();
+  }).catch((error) => {
+    if (error?.code === 'MODEL_DOWNLOAD_CANCELLED') {
+      state.status = 'cancelled';
+      state.progress = 0;
+      state.bytesDownloaded = 0;
+      state.message = 'Breeze ASR 25 模型下載已取消';
+      state.error = null;
+      state.updatedAt = new Date().toISOString();
+      return;
+    }
+    state.status = 'failed';
+    state.error = `Breeze ASR 25 模型下載失敗：${error.message}`;
+    state.message = state.error;
+    state.updatedAt = new Date().toISOString();
+  });
+  return state;
 }
 
-async function runJob(job) {
+function cancelBreezeModelDownload() {
+  if (breezeModelDownloadJob?.status === 'downloading') {
+    breezeModelDownloadJob.status = 'cancelled';
+    breezeModelDownloadJob.progress = 0;
+    breezeModelDownloadJob.bytesDownloaded = 0;
+    breezeModelDownloadJob.message = 'Breeze ASR 25 模型下載已取消';
+    breezeModelDownloadJob.error = null;
+    breezeModelDownloadJob.updatedAt = new Date().toISOString();
+    breezeModelDownloadJob.controller?.abort(new Error('使用者取消 Breeze ASR 25 模型下載'));
+  }
+  return breezeModelDownloadJob;
+}
+
+function refreshBreezePythonPath() {
+  toolPaths.breezePython = resolveBreezePython({ env: process.env, toolsDir, platform: process.platform });
+  basicToolsCache = null;
+  basicToolsPromise = null;
+}
+
+function humanizeBreezeRuntimeError(error) {
+  switch (error?.code) {
+    case 'RUNTIME_NOT_AVAILABLE': return 'Breeze 執行環境尚未發布可下載版本。請稍後再試，或使用進階設定中的外部 runtime。';
+    case 'RUNTIME_CANCELLED': return 'Breeze 執行環境下載已取消。';
+    case 'RUNTIME_TIMEOUT': return 'Breeze 執行環境下載逾時，未保留不完整檔案。';
+    case 'RUNTIME_SIZE_MISMATCH': return '下載檔案驗證失敗：下載內容大小不符，已自動刪除不完整檔案。';
+    case 'RUNTIME_SHA256_MISMATCH': return '下載檔案驗證失敗：SHA-256 不符，已自動刪除檔案。';
+    case 'RUNTIME_ARCHIVE_INVALID': return '下載檔案驗證失敗：Breeze 執行環境封裝不是有效檔案。';
+    case 'RUNTIME_STATE_INVALID': return 'Breeze 執行環境狀態檔損壞；可移除後重新安裝。';
+    case 'RUNTIME_BUSY': return 'Breeze 執行環境仍在處理中，請等待取消或安裝工作完成。';
+    case 'RUNTIME_HTTP_ERROR': return 'Breeze 執行環境下載失敗，請檢查網路後重新下載。';
+    case 'ZIP_SLIP':
+    case 'ZIP_SYMLINK': return 'Breeze 執行環境安裝失敗：下載檔案包含不安全的路徑。';
+    case 'ZIP_CORRUPT':
+    case 'ZIP_METHOD_UNSUPPORTED': return 'Breeze 執行環境安裝失敗：無法解壓縮下載的執行環境。';
+    case 'RUNTIME_PROBE_FAILED': return 'Breeze 執行環境無法使用：完整性檢查未通過。';
+    case 'RUNTIME_DISK_SPACE': return '磁碟空間不足，請清理磁碟空間後再試。';
+    default: return 'Breeze 執行環境安裝失敗，請稍後重新安裝。';
+  }
+}
+
+async function getBreezeRuntimeStatusPayload({ force = false, includeExternal = true } = {}) {
+  let manifest = null;
+  let manifestError = null;
+  try { manifest = await breezeRuntimeManager.getBreezeRuntimeManifest(); }
+  catch (error) { manifestError = error; }
+  const inspected = manifest
+    ? await breezeRuntimeManager.inspectInstalledBreezeRuntime({ manifest })
+    : { status: BREEZE_RUNTIME_STATUS.INVALID, installed: false, ready: false, reason: 'manifest-invalid' };
+  const activeJob = breezeRuntimeInstallJob;
+  const installInProgress = [BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(activeJob?.status);
+  let externalRuntime = false;
+  if (includeExternal && !installInProgress) {
+    const tools = await getBasicToolsStatus(force);
+    externalRuntime = Boolean(tools.breezeRuntime && (!inspected.python || path.resolve(toolPaths.breezePython) !== path.resolve(inspected.python)));
+  }
+  const ready = Boolean(inspected.ready || externalRuntime);
+  const status = activeJob?.status && (
+    [BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(activeJob.status)
+    || (!inspected.ready && [BREEZE_RUNTIME_STATUS.FAILED, BREEZE_RUNTIME_STATUS.CANCELLED].includes(activeJob.status))
+  )
+    ? activeJob.status
+    : ready && externalRuntime && !inspected.ready
+      ? BREEZE_RUNTIME_STATUS.INSTALLED
+      : inspected.status;
+  const download = manifest?.download || { available: false, url: null, filename: null, size: null, uncompressedSize: null, sha256: null };
+  return {
+    status,
+    installed: Boolean(inspected.installed || externalRuntime),
+    ready,
+    source: inspected.ready ? 'managed' : externalRuntime ? 'external' : null,
+    runtimeVersion: manifest?.runtimeVersion || null,
+    installedVersion: inspected.activeVersion || null,
+    latestSupportedVersion: manifest?.runtimeVersion || null,
+    updateAvailable: false,
+    platform: process.platform,
+    arch: process.arch,
+    variant: manifest?.variant || 'cpu',
+    pythonVersion: manifest?.pythonVersion || '3.11',
+    python: inspected.python || (externalRuntime ? path.basename(toolPaths.breezePython) : null),
+    installDirectory: breezeRuntimeManager.getBreezeRuntimeDirectory(),
+    download: {
+      available: Boolean(download.available),
+      url: download.url || null,
+      filename: download.filename || null,
+      size: download.size || 0,
+      uncompressedSize: download.uncompressedSize || 0,
+      sha256: download.sha256 || null,
+    },
+    progress: activeJob?.progress ?? (ready ? 100 : 0),
+    bytesDownloaded: activeJob?.bytesDownloaded ?? 0,
+    totalBytes: activeJob?.totalBytes ?? Number(download.size || 0),
+    cancelRequested: Boolean(activeJob?.cancelRequested),
+    message: activeJob?.message || (manifestError
+      ? 'Breeze 執行環境設定無法讀取。'
+      : ready
+        ? (externalRuntime ? '偵測到外部 Breeze runtime' : 'Breeze ASR 25 runtime 已就緒')
+        : download.available ? 'Breeze 執行環境尚未安裝' : 'Breeze 執行環境尚未發布可下載版本'),
+    error: activeJob?.error || (manifestError ? humanizeBreezeRuntimeError(manifestError) : null),
+    releaseStatus: manifest?.releaseStatus || 'unknown',
+  };
+}
+
+async function startBreezeRuntimeInstall() {
+  if (breezeRuntimeInstallJob && [BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(breezeRuntimeInstallJob.status)) return breezeRuntimeInstallJob;
+  const manifest = await breezeRuntimeManager.getBreezeRuntimeManifest();
+  if (!manifest.download?.available) {
+    const error = new Error('Breeze runtime package 尚未發布');
+    error.code = 'RUNTIME_NOT_AVAILABLE';
+    throw error;
+  }
+  const state = {
+    status: BREEZE_RUNTIME_STATUS.DOWNLOADING,
+    progress: 0,
+    bytesDownloaded: 0,
+    totalBytes: Number(manifest.download?.size || 0),
+    message: '正在下載 Breeze 執行環境',
+    error: null,
+    cancelRequested: false,
+    updatedAt: new Date().toISOString(),
+  };
+  breezeRuntimeInstallJob = state;
+  breezeRuntimeManager.install({
+    manifest,
+    onProgress: (event) => {
+      Object.assign(state, event, { updatedAt: new Date().toISOString() });
+      if (event.status === BREEZE_RUNTIME_STATUS.VERIFYING) state.message = '正在驗證下載內容…';
+      if (event.status === BREEZE_RUNTIME_STATUS.INSTALLING) state.message = '正在安裝 Breeze 執行環境…';
+      if (event.status === BREEZE_RUNTIME_STATUS.INSTALLED) state.message = 'Breeze ASR 25 已準備完成';
+    },
+  }).then(() => {
+    state.status = BREEZE_RUNTIME_STATUS.INSTALLED;
+    state.progress = 100;
+    state.error = null;
+    state.cancelRequested = false;
+    state.message = 'Breeze ASR 25 已準備完成';
+    state.updatedAt = new Date().toISOString();
+    refreshBreezePythonPath();
+  }).catch((error) => {
+    console.error(`[breeze-runtime] install failed: ${error?.code || 'RUNTIME_ERROR'} ${error?.probe ? JSON.stringify(error.probe) : ''}`);
+    state.status = error?.code === 'RUNTIME_CANCELLED' ? BREEZE_RUNTIME_STATUS.CANCELLED : BREEZE_RUNTIME_STATUS.FAILED;
+    state.cancelRequested = false;
+    state.error = error?.code === 'RUNTIME_PROBE_FAILED' ? 'Breeze 執行環境已下載，但完整性檢查未通過。' : humanizeBreezeRuntimeError(error);
+    state.message = state.error;
+    state.updatedAt = new Date().toISOString();
+  });
+  return state;
+}
+
+function cancelBreezeRuntimeInstall() {
+  const state = breezeRuntimeInstallJob;
+  if (state && [BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(state.status)) {
+    state.cancelRequested = true;
+    state.message = '正在取消 Breeze 執行環境安裝…';
+    state.error = null;
+    state.updatedAt = new Date().toISOString();
+    breezeRuntimeManager.cancel();
+  }
+  return state;
+}
+
+async function getGpuStatus(force = false) {
+  const now = Date.now();
+  if (!force && gpuCache && now - gpuCache.checkedAt < gpuCacheTtlMs) return gpuCache.value;
+  if (!force && gpuPromise) return gpuPromise;
+  gpuPromise = detectGpu().then((value) => {
+    gpuCache = { value, checkedAt: Date.now() };
+    return value;
+  }).finally(() => { gpuPromise = null; });
+  return gpuPromise;
+}
+
+async function detectGpu() {
+  const result = {
+    available: false,
+    status: 'cpu-only',
+    deviceName: '',
+    memoryMb: 0,
+    cudaVersion: '',
+    error: null,
+  };
+
+  if (!fs.existsSync(toolPaths.python)) {
+    if (fs.existsSync(toolPaths.whisperCpp)) {
+      if (process.platform === 'darwin' && process.arch === 'arm64') {
+        return {
+          ...result,
+          available: true,
+          status: 'mps',
+          deviceName: 'Apple Silicon GPU (Metal)',
+          error: null,
+        };
+      }
+      return { ...result, status: 'cpu-only', error: null };
+    }
+    return { ...result, status: 'error', error: '找不到可用的本機轉錄引擎' };
+  }
+
+  const script = [
+    'import json',
+    'r = {"available": False, "status": "cpu-only", "deviceName": "", "memoryMb": 0, "cudaVersion": "", "error": None}',
+    'try:',
+    '    import torch',
+    '    if torch.cuda.is_available():',
+    '        r["available"] = True',
+    '        r["status"] = "cuda"',
+    '        r["deviceName"] = torch.cuda.get_device_name(0)',
+    '        r["memoryMb"] = int(torch.cuda.get_device_properties(0).total_memory // (1024 ** 2))',
+    '        r["cudaVersion"] = torch.version.cuda or ""',
+    '    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():',
+    '        r["available"] = True',
+    '        r["status"] = "mps"',
+    '        r["deviceName"] = "Apple Silicon GPU (Metal)"',
+    'except Exception as e:',
+    '    r["error"] = str(e)',
+    'print(json.dumps(r, ensure_ascii=False))',
+  ].join('\n');
+
+  const output = await new Promise((resolve) => {
+    const child = spawn(toolPaths.python, ['-c', script], { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ code: null, stdout, stderr, timedOut: true });
+    }, 10000);
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr, timedOut: false });
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ code: null, stdout, stderr: error.message, timedOut: false });
+    });
+  });
+
+  if (output.timedOut) {
+    return { ...result, status: 'error', error: 'GPU 檢測逾時' };
+  }
+
+  if (output.code !== 0 && !output.stdout.trim()) {
+    return { ...result, status: 'error', error: output.stderr.trim() || 'GPU 檢測失敗' };
+  }
+
+  try {
+    const parsed = JSON.parse(output.stdout.trim());
+    const next = {
+      ...result,
+      available: Boolean(parsed.available),
+      status: parsed.status || 'cpu-only',
+      deviceName: parsed.deviceName || '',
+      memoryMb: Number(parsed.memoryMb || 0),
+      cudaVersion: parsed.cudaVersion || '',
+      error: parsed.error || null,
+    };
+    if (next.error) next.status = 'error';
+    return next;
+  } catch {
+    return { ...result, status: 'error', error: 'PyTorch 輸出解析失敗' };
+  }
+}
+
+async function healthCheck(force = false) {
+  const tools = await getBasicToolsStatus(force);
+  const managedRuntime = await getBreezeRuntimeStatusPayload({ force, includeExternal: false });
+  const {
+    node: hasNode,
+    ffmpeg: hasFfmpeg,
+    python: hasPython,
+    whisper: hasWhisper,
+    whisperCpp: hasWhisperCpp,
+    whisperCppModel: hasWhisperCppModel,
+    whisperModels,
+    breezeRuntime,
+    breezeModel,
+    asrEngine,
+  } = tools;
+  const gpuInfo = await getGpuStatus(force);
+
+  // Determine overall readiness
+  const criticalMissing = [];
+  if (!hasNode) criticalMissing.push('Node.js');
+  if (!hasFfmpeg) criticalMissing.push('FFmpeg');
+  if (!hasWhisper) criticalMissing.push('Whisper 離線轉錄引擎或預設模型');
+
+  const isReady = criticalMissing.length === 0;
+  const canProcessJobs = hasWhisper && hasFfmpeg;
+
+  // Build human-readable install guidance
+  let installGuide = null;
+  if (criticalMissing.length > 0) {
+    const guideParts = [];
+    guideParts.push('• 正式安裝包已內建所有必要元件；若檔案缺失或損壞，請重新安裝 APP。');
+    installGuide = {
+      missingTools: criticalMissing,
+      steps: guideParts,
+      repairAction: 'reinstall-app',
+    };
+  }
+
+  return {
+    ok: isReady,
+    ready: isReady,
+    canProcessJobs,
+    node: process.version,
+    localToolsDir: toolsDir,
+    toolsInfo: {
+      selectedToolsDir: toolsInfo.toolsDir,
+      candidates: toolsInfo.candidates,
+      manifest: toolsInfo.manifest,
+      manifestPath: toolPaths.manifest,
+    },
+    settings: {
+      settingsFile: settingsPath,
+      projectFolder: getJobsDir(),
+      importFolder: appSettings.importFolder,
+      exportFolder: appSettings.exportFolder,
+      appLanguage: appSettings.appLanguage,
+    },
+    tools: {
+      node: hasNode,
+      ffmpeg: hasFfmpeg,
+      python: hasPython,
+      whisper: hasWhisper,
+      whisperCpp: hasWhisperCpp,
+      whisperCppModel: hasWhisperCppModel,
+      whisperModels,
+      breezeRuntime,
+      breezeModel,
+      asrEngine,
+      gpu: gpuInfo,
+    },
+    breeze: {
+      model: Boolean(breezeModel?.valid),
+      runtime: Boolean(breezeRuntime || managedRuntime.ready),
+      runtimeVersion: managedRuntime.installedVersion || managedRuntime.runtimeVersion || null,
+      python: Boolean(breezeRuntime),
+      whisperPatched: Boolean(breezeRuntime),
+      modelCapability: Boolean(breezeRuntime && breezeModel?.valid),
+      device: managedRuntime.variant === 'cpu' ? 'cpu' : managedRuntime.variant,
+      runtimeStatus: breezeRuntime ? BREEZE_RUNTIME_STATUS.INSTALLED : managedRuntime.status,
+    },
+    paths: toolPaths,
+    installGuide,
+    criticalMissing,
+  };
+}
+
+function createJobCancelledError() {
+  const error = new Error('任務已取消');
+  error.code = 'JOB_CANCELLED';
+  return error;
+}
+
+function throwIfJobCancelled(signal) {
+  if (signal?.aborted) throw createJobCancelledError();
+}
+
+function startJob(jobId) {
+  if (runningJobs.has(jobId)) return { started: false, alreadyRunning: true };
+  if (runningTrims.has(jobId)) return { started: false, error: '影片修剪進行中，完成後才能開始字幕轉錄' };
+  if (runningBurns.has(jobId)) return { started: false, error: '影片輸出進行中，無法開始字幕轉錄' };
+  const job = loadJob(jobId);
+  if (!job) return { started: false, error: '找不到任務' };
+  const controller = new AbortController();
+  const entry = { controller, promise: null, state: 'queued' };
+  runningJobs.set(jobId, entry);
+  jobQueue.push({ jobId, job, entry });
+  const queued = activeJobCount >= maxConcurrentJobs;
+  if (queued) {
+    updateJob(job, {
+      status: 'queued',
+      stage: 'queued',
+      progress: 0,
+      message: `任務排隊中（前方 ${jobQueue.length - 1} 個）`,
+    }, '已加入字幕處理佇列');
+  }
+  drainJobQueue();
+  return { started: true, alreadyRunning: false, queued, queuePosition: queued ? jobQueue.length : 0 };
+}
+
+function drainJobQueue() {
+  while (activeJobCount < maxConcurrentJobs && jobQueue.length) {
+    const queuedJob = jobQueue.shift();
+    const { jobId, job, entry } = queuedJob;
+    if (entry.controller.signal.aborted) {
+      runningJobs.delete(jobId);
+      continue;
+    }
+    activeJobCount += 1;
+    entry.state = 'running';
+    entry.promise = runJob(job, entry.controller.signal)
+    .catch((error) => {
+      const cancelled = entry.controller.signal.aborted || error?.code === 'JOB_CANCELLED';
+      updateJob(job, cancelled ? {
+        status: 'cancelled',
+        stage: 'cancelled',
+        message: '任務已由使用者取消',
+      } : {
+        status: 'failed',
+        stage: 'failed',
+        message: `任務失敗：${error.message}`,
+      }, cancelled ? '已停止目前任務' : `任務執行失敗：${error.message}`);
+    })
+    .finally(() => {
+      activeJobCount = Math.max(0, activeJobCount - 1);
+      runningJobs.delete(jobId);
+      refreshQueuedJobStatuses();
+      drainJobQueue();
+    });
+  }
+}
+
+function refreshQueuedJobStatuses() {
+  jobQueue.forEach(({ job }, index) => {
+    updateJob(job, {
+      status: 'queued',
+      stage: 'queued',
+      progress: 0,
+      message: `任務排隊中（前方 ${index + activeJobCount} 個）`,
+    });
+  });
+}
+
+function cancelJob(jobId) {
+  const active = runningJobs.get(jobId);
+  if (!active) return false;
+  active.controller.abort();
+  const job = loadJob(jobId);
+  if (active.state === 'queued') {
+    const queueIndex = jobQueue.findIndex((item) => item.jobId === jobId);
+    if (queueIndex >= 0) jobQueue.splice(queueIndex, 1);
+    runningJobs.delete(jobId);
+    if (job) {
+      updateJob(job, {
+        status: 'cancelled',
+        stage: 'cancelled',
+        message: '已取消排隊中的任務',
+      }, '使用者取消排隊中的任務');
+    }
+    refreshQueuedJobStatuses();
+    return true;
+  }
+  if (job) {
+    updateJob(job, {
+      status: 'running',
+      stage: 'cancelling',
+      message: '正在停止目前任務...',
+    }, '使用者要求取消任務');
+  }
+  return true;
+}
+
+function retryJob(jobId) {
+  if (runningJobs.has(jobId)) return { started: false, error: '任務仍在執行中' };
+  const job = loadJob(jobId);
+  if (!job) return { started: false, error: '找不到任務' };
+  if (!['failed', 'cancelled', 'needs-action'].includes(job.status.status)) {
+    return { started: false, error: `目前狀態「${job.status.status}」不可重新執行` };
+  }
+  const workingDir = path.join(job.jobRoot, 'working');
+  fs.mkdirSync(workingDir, { recursive: true });
+  const preservedTrimFiles = new Set([
+    'edit-plan.json',
+    'media-trimmed.mp4',
+    'trim-status.json',
+  ]);
+  for (const entry of fs.readdirSync(workingDir)) {
+    if (preservedTrimFiles.has(entry) || /^waveform(?:-original)?-\d+\.json$/i.test(entry)) continue;
+    fs.rmSync(path.join(workingDir, entry), { recursive: true, force: true });
+  }
+  updateJob(job, {
+    status: 'created',
+    stage: 'retry-pending',
+    progress: 0,
+    message: '任務準備重新執行',
+    metrics: {},
+    files: {},
+  }, '清理前次轉錄暫存並保留非破壞式修剪設定後重新排程');
+  return startJob(jobId);
+}
+
+async function runJob(job, signal) {
+  throwIfJobCancelled(signal);
   updateJob(job, { status: 'running', stage: 'preflight', progress: 8, message: '檢查本機環境與工具' }, '開始環境檢查');
-  const hasFfmpeg = await commandExists(toolPaths.ffmpeg, ['-version']);
-  const hasPython = await commandExists(toolPaths.python);
-  const hasWhisper = await commandExists(toolPaths.python, ['-c', 'import whisper; print("ok")']);
+  const tools = await getBasicToolsStatus();
+  const { ffmpeg: hasFfmpeg, python: hasPython, whisper: hasWhisper, breezeRuntime, asrEngine } = tools;
+  throwIfJobCancelled(signal);
   updateJob(job, {
     progress: 22,
     message: '環境檢查完成',
-    metrics: { hasFfmpeg, hasPython, hasWhisper },
-  }, `FFmpeg=${hasFfmpeg ? 'OK' : '未安裝'} Python=${hasPython ? 'OK' : '未安裝'} Whisper=${hasWhisper ? 'OK' : '未安裝'}`);
+    metrics: { hasFfmpeg, hasPython, hasWhisper, breezeRuntime, asrEngine: job.config.asrEngine === BREEZE_ASR_ENGINE ? BREEZE_ASR_ENGINE : asrEngine },
+  }, `FFmpeg=${hasFfmpeg ? 'OK' : '缺少'} ASR=${asrEngine || '缺少'}`);
 
   const inputDir = path.join(job.jobRoot, 'input');
   const workingDir = path.join(job.jobRoot, 'working');
+  try { fs.unlinkSync(path.join(workingDir, 'quality-metadata.json')); } catch {}
   const existingSrtName = job.config.files.existingSrt;
-  if (existingSrtName) {
+  const trimmedSrtPath = path.join(job.jobRoot, 'review-output', 'trimmed.srt');
+  const uploadedSrtPath = existingSrtName ? path.join(inputDir, existingSrtName) : '';
+  const appliedEditPlan = readEditPlan(job.jobRoot);
+  if (!fs.existsSync(trimmedSrtPath) && appliedEditPlan?.appliedAt && uploadedSrtPath && fs.existsSync(uploadedSrtPath)) {
+    const remapped = trimSrtToRange(fs.readFileSync(uploadedSrtPath, 'utf8'), appliedEditPlan.in, appliedEditPlan.out);
+    if (remapped.cues.length) {
+      fs.mkdirSync(path.dirname(trimmedSrtPath), { recursive: true });
+      fs.writeFileSync(trimmedSrtPath, remapped.subtitle, 'utf8');
+    }
+  }
+  const existingSrtPath = fs.existsSync(trimmedSrtPath) ? trimmedSrtPath : uploadedSrtPath;
+  const existingSrtCues = existingSrtPath && fs.existsSync(existingSrtPath)
+    ? parseSrtCues(fs.readFileSync(existingSrtPath, 'utf8'))
+    : [];
+  if (existingSrtCues.length > 0) {
     updateJob(job, { stage: 'import-srt', progress: 42, message: '偵測到既有 SRT，略過 ASR 轉錄' }, '匯入使用者提供的 SRT');
-    fs.copyFileSync(path.join(inputDir, existingSrtName), path.join(workingDir, 'draft.srt'));
+    fs.copyFileSync(existingSrtPath, path.join(workingDir, 'draft.srt'));
+  } else if (job.config.asrEngine === BREEZE_ASR_ENGINE && job.config.files.video) {
+    const breezeModel = await inspectBreezeAsrModel(toolPaths.breezeModelCache, { allowMock: allowMockBreezeModel });
+    if (!hasFfmpeg || !breezeRuntime || !breezeModel.valid) {
+      const missing = [
+        !hasFfmpeg ? 'FFmpeg' : '',
+        !breezeRuntime ? 'MediaTek patched Whisper runtime' : '',
+        !breezeModel.valid ? `Breeze ASR 25 模型（${breezeModel.reason}）` : '',
+      ].filter(Boolean);
+      updateJob(job, {
+        status: 'needs-action',
+        stage: 'missing-asr',
+        progress: 35,
+        message: `Breeze ASR 25 尚未就緒：${missing.join('、')}。${breezeRuntimeInstallGuide()}`,
+      }, 'Breeze runtime／模型前置檢查未通過，未啟動推論');
+      return;
+    }
+    updateJob(job, { stage: 'transcribing', progress: 35, message: '使用 Breeze ASR 25 進行本機轉錄' }, '啟動 Breeze ASR 25 轉錄');
+    await runBreezeAsr(job, inputDir, workingDir, signal);
   } else if (hasWhisper && job.config.files.video) {
+    if (existingSrtName) {
+      updateJob(job, { progress: 25, message: '既有 SRT 無有效字幕，改用內建 ASR 轉錄' }, '忽略空白或無效的 SRT');
+    }
     updateJob(job, { stage: 'transcribing', progress: 35, message: '使用 Whisper 進行本機轉錄' }, '啟動 Whisper 轉錄');
-    await runWhisper(job, inputDir, workingDir);
+    await runWhisper(job, inputDir, workingDir, signal);
   } else {
     updateJob(job, {
       status: 'needs-action',
       stage: 'missing-asr',
       progress: 35,
-      message: '尚未偵測到可用 ASR。請先執行 setup-local-tools.bat，或上傳既有 SRT 後再執行。',
+      message: '尚未偵測到可用的內建 ASR。請重新安裝 APP，或上傳既有 SRT 後再執行。',
     }, '缺少 ASR 工具，流程暫停等待處理');
     return;
   }
 
+  throwIfJobCancelled(signal);
   updateJob(job, { stage: 'rule-cleanup', progress: 72, message: '套用字幕規則並產生校稿資料' }, '建立初稿與校稿報告');
   const draft = path.join(workingDir, 'draft.srt');
+  if (!fs.existsSync(draft) || parseSrtCues(fs.readFileSync(draft, 'utf8')).length === 0) {
+    throw new Error('轉錄未產生有效字幕段落，任務不會標記為完成；請確認影片含有可辨識的語音後重試。');
+  }
   const cleaned = path.join(workingDir, 'rule-cleaned.srt');
   const report = path.join(workingDir, 'correction-report.md');
   const settings = path.join(job.jobRoot, 'review-output', 'subtitle-style-settings.json');
-  fs.copyFileSync(draft, cleaned);
-  fs.writeFileSync(report, buildCorrectionReport(job), 'utf8');
+
+  // Load and apply rules from rule.txt
+  const ruleFileName = job.config.files.ruleFile;
+  let ruleResults = null;
+  if (ruleFileName && fs.existsSync(path.join(inputDir, ruleFileName))) {
+    const ruleContent = fs.readFileSync(path.join(inputDir, ruleFileName), 'utf8');
+    const rules = parseRules(ruleContent);
+    const draftContent = fs.readFileSync(draft, 'utf8');
+    const forceTraditional = rules.forceTraditional ?? job.config.language === 'zh-TW';
+    ruleResults = applyRulesToSrt(draftContent, rules, { forceTraditional });
+    fs.writeFileSync(cleaned, ruleResults.cleanedSrt, 'utf8');
+    updateJob(job, { progress: 85, message: `規則套用完成（${ruleResults.changedCues}/${ruleResults.totalCues} 段落有修改）` }, `套用 ${Object.values(rules).flat?.()?.length || 0} 條規則`);
+  } else {
+    if (job.config.language === 'zh-TW') {
+      const draftContent = fs.readFileSync(draft, 'utf8');
+      ruleResults = applyRulesToSrt(draftContent, parseRules(''), { forceTraditional: true });
+      fs.writeFileSync(cleaned, ruleResults.cleanedSrt, 'utf8');
+      updateJob(job, { progress: 85, message: `已套用繁體中文清理（${ruleResults.changedCues}/${ruleResults.totalCues} 段落有修改）` }, '未找到 rule.txt，已套用繁體中文轉換');
+    } else {
+      fs.copyFileSync(draft, cleaned);
+      updateJob(job, { progress: 85, message: '無規則檔，直接複製初稿' }, '未找到 rule.txt，跳過規則套用');
+    }
+  }
+
+  fs.writeFileSync(report, buildCorrectionReport(job, ruleResults), 'utf8');
   writeJson(settings, {
     fontFamily: 'Microsoft JhengHei',
     fontSize: 32,
@@ -274,29 +1802,234 @@ async function runJob(job) {
   }, '任務完成，等待人工校閱');
 }
 
-function runWhisper(job, inputDir, workingDir) {
+async function runBreezeAsr(job, inputDir, workingDir, signal) {
+  try { fs.unlinkSync(path.join(workingDir, 'quality-metadata.json')); } catch {}
+  const videoFile = getEffectiveVideoPath(job);
+  if (!videoFile) throw new Error('找不到可供 Breeze ASR 25 轉錄的有效影片');
+  const model = await inspectBreezeAsrModel(toolPaths.breezeModelCache, { allowMock: allowMockBreezeModel });
+  if (!model.valid) throw new Error(`Breeze ASR 25 模型驗證失敗（${model.reason}），未啟動推論`);
+  const tools = await getBasicToolsStatus();
+  if (!tools.breezeRuntime) throw new Error(`缺少 MediaTek patched Whisper runtime。${breezeRuntimeInstallGuide()}`);
+  const audioFile = await prepareWhisperAudio(job, videoFile, workingDir, signal);
+  throwIfJobCancelled(signal);
+  const gpu = await getGpuStatus();
+  const useCuda = gpu.available && gpu.status === 'cuda';
+  const configuredThreads = Number(job.config.cpuThreads || 0);
+  const cpuThreads = configuredThreads > 0
+    ? configuredThreads
+    : Math.max(1, Math.min(16, os.availableParallelism?.() || os.cpus().length || 1));
+  const args = buildBreezeAsrArgs({
+    audioFile,
+    outputDir: workingDir,
+    modelDir: toolPaths.breezeModelCache,
+    language: job.config.language,
+    device: useCuda ? 'cuda' : 'cpu',
+    cpuThreads,
+    performancePreset: job.config.performancePreset,
+  });
+  updateJob(job, {
+    stage: 'transcribing',
+    progress: 35,
+    message: `使用 Breeze ASR 25 轉錄（${useCuda ? 'CUDA' : `CPU ${cpuThreads} threads`}）`,
+    metrics: {
+      ...(job.status.metrics || {}),
+      asrEngine: BREEZE_ASR_ENGINE,
+      modelName: BREEZE_ASR_ENGINE,
+      modelFile: BREEZE_ASR_MODEL.filename,
+      whisperDevice: useCuda ? 'cuda' : 'cpu',
+      cpuThreads: useCuda ? null : cpuThreads,
+    },
+  }, `Breeze ASR 25 裝置=${useCuda ? 'CUDA' : 'CPU'}，使用已驗證的固定 checkpoint`);
+
+  const runtimeCommand = breezeTestRunner ? process.execPath : toolPaths.breezePython;
+  const runtimeArgs = breezeTestRunner ? [breezeTestRunner, ...args] : args;
   return new Promise((resolve, reject) => {
-    const videoFile = path.join(inputDir, job.config.files.video);
-    const args = [
-      videoFile,
-      '--language', job.config.language.startsWith('zh') ? 'Chinese' : job.config.language,
-      '--output_format', 'srt',
-      '--output_dir', workingDir,
-      '--model_dir', toolPaths.whisperModels,
-    ];
-    if (job.config.modelName) args.push('--model', job.config.modelName);
-    let lastProgressLogAt = 0;
-    const child = spawn(toolPaths.whisper, args, {
+    if (signal?.aborted) {
+      try { fs.unlinkSync(audioFile); } catch {}
+      reject(createJobCancelledError());
+      return;
+    }
+    const child = spawn(runtimeCommand, runtimeArgs, {
       shell: false,
       env: {
         ...process.env,
-        PATH: `${path.dirname(toolPaths.ffmpeg)};${path.dirname(toolPaths.whisper)};${process.env.PATH || ''}`,
+        PATH: [path.dirname(toolPaths.ffmpeg), path.dirname(toolPaths.python), process.env.PATH || ''].filter(Boolean).join(path.delimiter),
         XDG_CACHE_HOME: toolsDir,
-        WHISPER_CACHE: toolPaths.whisperModels,
+        WHISPER_CACHE: toolPaths.breezeModelCache,
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1',
       },
+      windowsHide: true,
     });
+    let settled = false;
+    let stderr = '';
+    let lastProgressLogAt = 0;
+    let cancelKillTimer = null;
+    let windowsTreeKillPending = false;
+    let cancelledChildClosed = false;
+    const removePartialOutputs = () => {
+      for (const file of fs.readdirSync(workingDir)) {
+        if (file !== 'draft.srt' && file.toLowerCase().endsWith('.srt')) {
+          try { fs.unlinkSync(path.join(workingDir, file)); } catch {}
+        }
+      }
+    };
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      if (cancelKillTimer) clearTimeout(cancelKillTimer);
+      signal?.removeEventListener('abort', abortHandler);
+      try { fs.unlinkSync(audioFile); } catch {}
+      callback();
+    };
+    const abortHandler = () => {
+      if (process.platform === 'win32' && child.pid) {
+        windowsTreeKillPending = true;
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { shell: false, stdio: 'ignore', windowsHide: true });
+        const finishTreeKill = (failed = false) => {
+          if (!windowsTreeKillPending) return;
+          windowsTreeKillPending = false;
+          if (failed) child.kill('SIGKILL');
+          if (cancelledChildClosed) {
+            removePartialOutputs();
+            finish(() => reject(createJobCancelledError()));
+          }
+        };
+        killer.on('error', () => finishTreeKill(true));
+        killer.on('close', (code) => finishTreeKill(code !== 0));
+      } else {
+        child.kill('SIGTERM');
+        cancelKillTimer = setTimeout(() => child.kill('SIGKILL'), 3000);
+      }
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+    child.stdout.on('data', (data) => {
+      const log = normalizeWhisperLog(data);
+      if (log) updateJob(job, { progress: 48, message: 'Breeze ASR 25 本機轉錄中' }, log);
+    });
+    child.stderr.on('data', (data) => {
+      stderr += data.toString('utf8');
+      const log = normalizeWhisperLog(data);
+      const now = Date.now();
+      if (log && now - lastProgressLogAt > 1200) {
+        lastProgressLogAt = now;
+        updateJob(job, { progress: 52, message: 'Breeze ASR 25 本機轉錄中' }, log);
+      }
+    });
+    child.on('error', (error) => finish(() => reject(signal?.aborted ? createJobCancelledError() : error)));
+    child.on('close', (code) => {
+      if (signal?.aborted) {
+        cancelledChildClosed = true;
+        if (windowsTreeKillPending) return;
+        removePartialOutputs();
+        finish(() => reject(createJobCancelledError()));
+        return;
+      }
+      if (code !== 0) {
+        finish(() => reject(new Error(`Breeze ASR 25 exit code ${code}: ${sanitizeLog(stderr).slice(-500)}`)));
+        return;
+      }
+      const srtFile = fs.readdirSync(workingDir).find((file) => file.toLowerCase().endsWith('.srt') && file !== 'draft.srt');
+      if (!srtFile) {
+        finish(() => reject(new Error('Breeze ASR 25 未產生 SRT 字幕檔')));
+        return;
+      }
+      const sanitized = sanitizeWhisperSrt(fs.readFileSync(path.join(workingDir, srtFile), 'utf8'));
+      if (!sanitized.cues.length) {
+        finish(() => reject(new Error('Breeze ASR 25 只產生無效字幕時間碼；請確認音訊內容後重試')));
+        return;
+      }
+      fs.writeFileSync(path.join(workingDir, 'draft.srt'), sanitized.subtitle, 'utf8');
+      if (sanitized.droppedCount > 0) {
+        updateJob(job, { progress: 58, message: `Breeze ASR 25 已略過 ${sanitized.droppedCount} 段無效時間碼` }, `清理 ${sanitized.droppedCount}/${sanitized.totalBlocks} 段無效 SRT cue`);
+      }
+      finish(resolve);
+    });
+  });
+}
+
+async function runWhisper(job, inputDir, workingDir, signal) {
+  try { fs.unlinkSync(path.join(workingDir, 'quality-metadata.json')); } catch {}
+  const videoFile = getEffectiveVideoPath(job);
+  if (!videoFile) throw new Error('找不到可轉錄的有效影片');
+  const audioFile = await prepareWhisperAudio(job, videoFile, workingDir, signal);
+  throwIfJobCancelled(signal);
+  const tools = await getBasicToolsStatus();
+  const selectedModel = inspectWhisperModelWithCache(job.config.modelName);
+  if (!selectedModel.valid) {
+    try { fs.unlinkSync(audioFile); } catch {}
+    const reason = selectedModel.reason === 'missing'
+      ? `尚未安裝 Whisper ${selectedModel.name.toUpperCase()} 模型（需要 ${selectedModel.filename}）`
+      : `Whisper ${selectedModel.name.toUpperCase()} 模型檔案驗證失敗（${selectedModel.reason}）`;
+    throw new Error(`${reason}；請在模型管理下載或手動放入模型快取後再試`);
+  }
+  if (tools.asrEngine === 'whisper.cpp') {
+    return runWhisperCpp(job, audioFile, workingDir, signal);
+  }
+  const gpu = await getGpuStatus();
+  const useCuda = gpu.available && gpu.status === 'cuda';
+  const preset = job.config.performancePreset || 'balanced';
+  const configuredThreads = Number(job.config.cpuThreads || 0);
+  const cpuThreads = configuredThreads > 0
+    ? configuredThreads
+    : Math.max(1, Math.min(16, os.availableParallelism?.() || os.cpus().length || 1));
+  updateJob(job, {
+    stage: 'transcribing',
+    progress: 35,
+    message: `使用 Whisper ${preset} 模式轉錄（${useCuda ? 'CUDA' : `CPU ${cpuThreads} threads`}）`,
+    metrics: {
+      ...(job.status.metrics || {}),
+      whisperDevice: useCuda ? 'cuda' : 'cpu',
+      performancePreset: preset,
+      cpuThreads: useCuda ? null : cpuThreads,
+    },
+  }, `Whisper 裝置=${useCuda ? 'CUDA' : 'CPU'} 模式=${preset}`);
+
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createJobCancelledError());
+      return;
+    }
+    const args = [
+      '-m', 'whisper',
+      audioFile,
+      '--language', job.config.language.startsWith('zh') ? 'Chinese' : job.config.language,
+      '--output_format', 'srt',
+      '--output_dir', workingDir,
+      '--model_dir', path.dirname(selectedModel.path),
+      '--device', useCuda ? 'cuda' : 'cpu',
+      '--fp16', useCuda ? 'True' : 'False',
+    ];
+    if (!useCuda) args.push('--threads', String(cpuThreads));
+    if (preset === 'fast') args.push('--beam_size', '1');
+    if (preset === 'accurate') args.push('--beam_size', '5');
+    if (job.config.modelName) args.push('--model', job.config.modelName);
+    let lastProgressLogAt = 0;
+    const child = spawn(toolPaths.python, args, {
+      shell: false,
+      env: {
+        ...process.env,
+        PATH: [path.dirname(toolPaths.ffmpeg), path.dirname(toolPaths.python), process.env.PATH || ''].filter(Boolean).join(path.delimiter),
+        XDG_CACHE_HOME: toolsDir,
+        WHISPER_CACHE: path.dirname(selectedModel.path),
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
+      windowsHide: true,
+    });
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abortHandler);
+      try { fs.unlinkSync(audioFile); } catch {}
+      callback();
+    };
+    const abortHandler = () => {
+      child.kill('SIGTERM');
+      finish(() => reject(createJobCancelledError()));
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
     child.stdout.on('data', (data) => {
       const log = normalizeWhisperLog(data);
       if (log) updateJob(job, { progress: 48, message: 'Whisper 本機轉錄中' }, log);
@@ -309,19 +2042,206 @@ function runWhisper(job, inputDir, workingDir) {
         updateJob(job, { progress: 52, message: 'Whisper 本機轉錄中' }, log);
       }
     });
-    child.on('error', reject);
+    child.on('error', (error) => finish(() => reject(error)));
     child.on('exit', (code) => {
+      if (signal?.aborted) {
+        finish(() => reject(createJobCancelledError()));
+        return;
+      }
       if (code !== 0) {
-        reject(new Error(`Whisper exit code ${code}`));
+        finish(() => reject(new Error(`Whisper exit code ${code}`)));
         return;
       }
       const srtFile = fs.readdirSync(workingDir).find((file) => file.toLowerCase().endsWith('.srt'));
       if (!srtFile) {
-        reject(new Error('Whisper did not produce an SRT file'));
+        finish(() => reject(new Error('Whisper did not produce an SRT file')));
         return;
       }
-      fs.copyFileSync(path.join(workingDir, srtFile), path.join(workingDir, 'draft.srt'));
-      resolve();
+      const sanitized = sanitizeWhisperSrt(fs.readFileSync(path.join(workingDir, srtFile), 'utf8'));
+      if (!sanitized.cues.length) {
+        finish(() => reject(new Error('Whisper 只產生無效字幕時間碼；請確認音訊內容或改用其他模型後重試')));
+        return;
+      }
+      fs.writeFileSync(path.join(workingDir, 'draft.srt'), sanitized.subtitle, 'utf8');
+      if (sanitized.droppedCount > 0) {
+        updateJob(job, { progress: 58, message: `Whisper 已略過 ${sanitized.droppedCount} 段無效時間碼` }, `清理 ${sanitized.droppedCount}/${sanitized.totalBlocks} 段無效 SRT cue`);
+      }
+      finish(resolve);
+    });
+  });
+}
+
+function runWhisperCpp(job, audioFile, workingDir, signal, forceCpu = false) {
+  const modelName = normalizeWhisperModelName(job.config.modelName);
+  const model = inspectWhisperModelWithCache(modelName);
+  if (!model.valid) {
+    try { fs.unlinkSync(audioFile); } catch {}
+    const reason = model.reason === 'missing'
+      ? `尚未安裝 Whisper ${modelName} 模型（需要 ${model.filename}）`
+      : `Whisper ${modelName} 模型檔案驗證失敗（${model.reason}）`;
+    return Promise.reject(new Error(`${reason}；請安裝或匯入正確模型後再試`));
+  }
+  const configuredThreads = Number(job.config.cpuThreads || 0);
+  const cpuThreads = configuredThreads > 0
+    ? configuredThreads
+    : Math.max(1, Math.min(16, os.availableParallelism?.() || os.cpus().length || 1));
+  const outputBase = path.join(workingDir, 'whisper-cpp-output');
+  const outputSrt = `${outputBase}.srt`;
+  const language = job.config.language.startsWith('zh') ? 'zh' : job.config.language;
+  const useMetal = process.platform === 'darwin' && process.arch === 'arm64' && !forceCpu;
+
+  updateJob(job, {
+    stage: 'transcribing',
+    progress: 35,
+    message: `使用 Whisper.cpp ${model.label} 轉錄（${useMetal ? 'Apple Metal' : `CPU ${cpuThreads} threads`}）`,
+    metrics: {
+      ...(job.status.metrics || {}),
+      whisperDevice: useMetal ? 'metal' : 'cpu',
+      asrEngine: 'whisper.cpp',
+      modelName,
+      modelFile: model.filename,
+      cpuThreads,
+    },
+  }, `啟動 Whisper.cpp ${model.label}（${model.filename}）`);
+
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      try { fs.unlinkSync(audioFile); } catch {}
+      reject(createJobCancelledError());
+      return;
+    }
+
+    const args = buildWhisperCppArgs({
+      modelPath: model.path,
+      audioFile,
+      outputBase,
+      language,
+      cpuThreads,
+      forceCpu,
+    });
+    const child = spawn(toolPaths.whisperCpp, args, {
+      shell: false,
+      cwd: path.dirname(toolPaths.whisperCpp),
+      env: {
+        ...process.env,
+        PATH: [path.dirname(toolPaths.whisperCpp), path.dirname(toolPaths.ffmpeg), process.env.PATH || ''].filter(Boolean).join(path.delimiter),
+      },
+      windowsHide: true,
+    });
+    let settled = false;
+    let stderr = '';
+    let lastProgressLogAt = 0;
+    const finish = (callback, cleanupAudio = true) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abortHandler);
+      if (cleanupAudio) try { fs.unlinkSync(audioFile); } catch {}
+      callback();
+    };
+    const abortHandler = () => {
+      child.kill('SIGTERM');
+      finish(() => reject(createJobCancelledError()));
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+    child.stdout.on('data', (data) => {
+      const log = normalizeWhisperLog(data);
+      if (log && Date.now() - lastProgressLogAt > 1200) {
+        lastProgressLogAt = Date.now();
+        updateJob(job, { progress: 52, message: 'Whisper.cpp 本機轉錄中' }, log);
+      }
+    });
+    child.stderr.on('data', (data) => {
+      stderr = `${stderr}${data.toString('utf8')}`.slice(-4000);
+      const log = normalizeWhisperLog(data);
+      if (log && Date.now() - lastProgressLogAt > 1200) {
+        lastProgressLogAt = Date.now();
+        updateJob(job, { progress: 52, message: 'Whisper.cpp 本機轉錄中' }, log);
+      }
+    });
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('exit', (code) => {
+      if (signal?.aborted) {
+        finish(() => reject(createJobCancelledError()));
+        return;
+      }
+      if (code !== 0) {
+        if (shouldRetryWhisperOnCpu({ platform: process.platform, arch: process.arch, forceCpu, exitCode: code })) {
+          for (const suffix of ['.srt', '.json']) {
+            try { fs.unlinkSync(`${outputBase}${suffix}`); } catch {}
+          }
+          updateJob(job, { progress: 52, message: 'Apple Metal 失敗，改用 CPU 重試 Whisper.cpp' }, `Metal exit ${code}，開始 CPU fallback：${sanitizeLog(stderr).slice(-500)}`);
+          finish(() => runWhisperCpp(job, audioFile, workingDir, signal, true).then(resolve, reject), false);
+          return;
+        }
+        finish(() => reject(new Error(`Whisper.cpp exit code ${code}: ${sanitizeLog(stderr).slice(-500)}`)));
+        return;
+      }
+      if (!fs.existsSync(outputSrt)) {
+        finish(() => reject(new Error('Whisper.cpp 未產生 SRT 字幕檔')));
+        return;
+      }
+      const sanitized = sanitizeWhisperSrt(fs.readFileSync(outputSrt, 'utf8'));
+      if (!sanitized.cues.length) {
+        finish(() => reject(new Error('Whisper.cpp 只產生無效字幕時間碼；請確認音訊內容或改用其他模型後重試')));
+        return;
+      }
+      fs.writeFileSync(path.join(workingDir, 'draft.srt'), sanitized.subtitle, 'utf8');
+      if (sanitized.droppedCount > 0) {
+        updateJob(job, { progress: 58, message: `Whisper.cpp 已略過 ${sanitized.droppedCount} 段無效時間碼` }, `清理 ${sanitized.droppedCount}/${sanitized.totalBlocks} 段無效 SRT cue`);
+      }
+      try {
+        const jsonPath = `${outputBase}.json`;
+        const quality = parseWhisperQualityJson(JSON.parse(fs.readFileSync(jsonPath, 'utf8')));
+        const qualityForCues = sanitized.cues.map((cue) => {
+          const segment = quality[cue.sourceIndex];
+          return segment ? { ...segment, id: cue.id } : null;
+        });
+        const matched = qualityForCues.every(Boolean)
+          ? attachWhisperQuality(sanitized.cues, qualityForCues)
+          : { matched: false, reason: 'source-metadata-mismatch' };
+        if (matched.matched && matched.reason === 'engine-metrics') writeJson(path.join(workingDir, 'quality-metadata.json'), matched.cues.map(({ id, start, end, confidence, noSpeechProbability }) => ({ id, start, end, confidence, noSpeechProbability })));
+      } catch { /* malformed or incompatible metadata must not block SRT completion */ }
+      finish(resolve);
+    });
+  });
+}
+
+function prepareWhisperAudio(job, videoFile, workingDir, signal) {
+  const audioFile = path.join(workingDir, 'whisper-input.wav');
+  updateJob(job, {
+    stage: 'audio-preprocessing',
+    progress: 30,
+    message: '正在準備 16kHz 單聲道音訊',
+  }, '使用 FFmpeg 建立 Whisper 最佳化音訊');
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createJobCancelledError());
+      return;
+    }
+    const child = spawn(toolPaths.ffmpeg, [
+      '-y', '-i', videoFile,
+      '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+      audioFile,
+    ], { shell: false, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    let stderr = '';
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abortHandler);
+      callback();
+    };
+    const abortHandler = () => {
+      child.kill('SIGTERM');
+      finish(() => reject(createJobCancelledError()));
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+    child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk.toString('utf8')}`.slice(-2000); });
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('close', (code) => {
+      if (signal?.aborted) finish(() => reject(createJobCancelledError()));
+      else if (code === 0 && fs.existsSync(audioFile)) finish(() => resolve(audioFile));
+      else finish(() => reject(new Error(`音訊前處理失敗（FFmpeg exit ${code}）：${sanitizeLog(stderr).slice(-300)}`)));
     });
   });
 }
@@ -343,8 +2263,572 @@ function normalizeWhisperLog(buffer) {
   return cleaned.length > 120 ? cleaned.slice(0, 120) : cleaned;
 }
 
-function buildCorrectionReport(job) {
-  return [
+function parseRules(content) {
+  const rules = {
+    fillers: [],
+    normalizeTerms: [],
+    customReplacements: [],
+    removePunctuation: new Set(),
+    regexReplacements: [],
+    literalReplacements: [],
+    forceTraditional: null,
+  };
+
+  if (!content) return rules;
+
+  const lines = content.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const traditionalMatch = line.match(/^FORCE_TRADITIONAL:\s*(true|false|yes|no|1|0)$/i);
+    if (traditionalMatch) {
+      rules.forceTraditional = /^(true|yes|1)$/i.test(traditionalMatch[1]);
+      continue;
+    }
+
+    const fillerMatch = line.match(/^REMOVE_FILLER:\s*(.+)$/i);
+    if (fillerMatch) {
+      rules.fillers = fillerMatch[1].split('|').map((s) => s.trim()).filter(Boolean);
+      continue;
+    }
+
+    const normMatch = line.match(/^NORMALIZE_TERM:\s*(.+?)\s*->\s*(.+)$/i);
+    if (normMatch) {
+      rules.normalizeTerms.push({ from: normMatch[1].trim(), to: normMatch[2].trim() });
+      continue;
+    }
+
+    const customMatch = line.match(/^CUSTOM_REPLACE:\s*(.+?)\s*->\s*(.+)$/i);
+    if (customMatch) {
+      rules.customReplacements.push({ from: customMatch[1].trim(), to: customMatch[2].trim() });
+      continue;
+    }
+
+    const punctMatch = line.match(/^REMOVE_PUNCTUATION:\s*(.+)$/i);
+    if (punctMatch) {
+      for (const ch of punctMatch[1]) rules.removePunctuation.add(ch);
+      continue;
+    }
+
+    const regexMatch = line.match(/^REGEX_REPLACE:\s*(.+?)\s*->\s*(.+)$/i);
+    if (regexMatch) {
+      try {
+        const rm = regexMatch[1].match(/^\/(.+)\/([gimsuy]*)$/);
+        if (rm) {
+          rules.regexReplacements.push({ pattern: new RegExp(rm[1], rm[2]), replacement: regexMatch[2] });
+        } else {
+          rules.regexReplacements.push({ pattern: new RegExp(regexMatch[1], 'g'), replacement: regexMatch[2] });
+        }
+      } catch {
+        // skip invalid regex
+      }
+      continue;
+    }
+
+    // Fallback: literal replacement "原文 -> 替換文"
+    const litMatch = line.match(/^(.+?)\s*->\s*(.+)$/);
+    if (litMatch) {
+      rules.literalReplacements.push({ from: litMatch[1].trim(), to: litMatch[2].trim() });
+      continue;
+    }
+  }
+
+  return rules;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const SIMPLIFIED_PHRASE_MAP = new Map([
+  ['上传', '上傳'],
+  ['下载', '下載'],
+  ['文件', '檔案'],
+  ['视频', '影片'],
+  ['音频', '音訊'],
+  ['屏幕', '螢幕'],
+  ['鼠标', '滑鼠'],
+  ['默认', '預設'],
+  ['设置', '設定'],
+  ['项目', '專案'],
+  ['导入', '匯入'],
+  ['导出', '匯出'],
+  ['检查', '檢查'],
+  ['检测', '偵測'],
+  ['生成', '產生'],
+  ['处理', '處理'],
+  ['运行', '執行'],
+  ['启动', '啟動'],
+  ['关闭', '關閉'],
+  ['打开', '開啟'],
+  ['保存', '儲存'],
+  ['数据库', '資料庫'],
+  ['资料', '資料'],
+  ['数据', '資料'],
+  ['网络', '網路'],
+  ['服务器', '伺服器'],
+  ['链接', '連結'],
+  ['复制', '複製'],
+  ['粘贴', '貼上'],
+  ['删除', '刪除'],
+  ['选择', '選擇'],
+  ['确认', '確認'],
+  ['说明', '說明'],
+  ['错误', '錯誤'],
+  ['完成', '完成'],
+  ['进度', '進度'],
+  ['规则', '規則'],
+  ['字幕', '字幕'],
+  ['识别', '辨識'],
+  ['转录', '轉錄'],
+  ['转换', '轉換'],
+  ['优化', '優化'],
+  ['质量', '品質'],
+  ['术语', '術語'],
+  ['专有名词', '專有名詞'],
+  ['繁体中文', '繁體中文'],
+  ['简体中文', '簡體中文'],
+]);
+
+const SIMPLIFIED_CHAR_MAP = new Map(Object.entries({
+  万: '萬', 与: '與', 专: '專', 业: '業', 丛: '叢', 东: '東', 丝: '絲', 丢: '丟',
+  两: '兩', 严: '嚴', 丧: '喪', 个: '個', 临: '臨', 为: '為', 举: '舉', 么: '麼',
+  义: '義', 乌: '烏', 乐: '樂', 习: '習', 乡: '鄉', 书: '書', 买: '買', 乱: '亂',
+  争: '爭', 于: '於', 亏: '虧', 云: '雲', 亘: '亙', 亚: '亞', 产: '產', 亩: '畝',
+  亲: '親', 亵: '褻', 亿: '億', 仅: '僅', 从: '從', 仑: '侖', 仓: '倉', 仪: '儀',
+  们: '們', 价: '價', 众: '眾', 优: '優', 会: '會', 伛: '傴', 伞: '傘', 伟: '偉',
+  传: '傳', 伤: '傷', 伦: '倫', 伪: '偽', 体: '體', 余: '餘', 佛: '佛', 佣: '傭',
+  佥: '僉', 侠: '俠', 侣: '侶', 侥: '僥', 侦: '偵', 侧: '側', 侨: '僑', 侩: '儈',
+  侪: '儕', 侬: '儂', 俣: '俁', 俦: '儔', 俨: '儼', 俩: '倆', 俪: '儷', 俭: '儉',
+  债: '債', 倾: '傾', 偿: '償', 傥: '儻', 傧: '儐', 储: '儲', 儿: '兒', 兑: '兌',
+  党: '黨', 兰: '蘭', 关: '關', 兴: '興', 兹: '茲', 养: '養', 兽: '獸', 冁: '囅',
+  内: '內', 冈: '岡', 册: '冊', 写: '寫', 军: '軍', 农: '農', 冯: '馮', 冲: '衝',
+  决: '決', 况: '況', 冻: '凍', 净: '淨', 凄: '淒', 准: '準', 凉: '涼', 减: '減',
+  凑: '湊', 凛: '凜', 几: '幾', 凤: '鳳', 凫: '鳧', 凭: '憑', 凯: '凱', 击: '擊',
+  凿: '鑿', 刍: '芻', 划: '劃', 刘: '劉', 则: '則', 刚: '剛', 创: '創', 删: '刪',
+  别: '別', 刬: '剗', 刭: '剄', 刹: '剎', 刽: '劊', 刾: '刺', 刿: '劌', 剀: '剴',
+  剂: '劑', 剐: '剮', 剑: '劍', 剥: '剝', 剧: '劇', 劝: '勸', 办: '辦', 务: '務',
+  动: '動', 励: '勵', 劲: '勁', 劳: '勞', 势: '勢', 勋: '勳', 勐: '猛', 勚: '勩',
+  勾: '鉤', 匀: '勻', 匦: '匭', 匮: '匱', 区: '區', 医: '醫', 华: '華', 协: '協',
+  单: '單', 卖: '賣', 卢: '盧', 卤: '鹵', 卧: '臥', 卫: '衛', 却: '卻', 厂: '廠',
+  厅: '廳', 历: '歷', 厉: '厲', 压: '壓', 厌: '厭', 厕: '廁', 厢: '廂', 厣: '厴',
+  厦: '廈', 厨: '廚', 厩: '廄', 厮: '廝', 县: '縣', 参: '參', 双: '雙', 发: '發',
+  变: '變', 叙: '敘', 叠: '疊', 叶: '葉', 号: '號', 叹: '嘆', 后: '後', 吓: '嚇',
+  吕: '呂', 吗: '嗎', 启: '啟', 吴: '吳', 呒: '嘸', 呓: '囈', 呕: '嘔', 呖: '嚦',
+  呗: '唄', 员: '員', 呙: '咼', 呛: '嗆', 呜: '嗚', 咏: '詠', 咙: '嚨', 咛: '嚀',
+  咝: '噝', 咤: '吒', 咸: '鹹', 响: '響', 哑: '啞', 哒: '噠', 哓: '嘵', 哔: '嗶',
+  哕: '噦', 哗: '嘩', 哙: '噲', 哜: '嚌', 哝: '噥', 哟: '喲', 唛: '嘜', 唝: '嗊',
+  唠: '嘮', 唡: '啢', 唢: '嗩', 唤: '喚', 啧: '嘖', 啬: '嗇', 啭: '囀', 啮: '嚙',
+  啰: '囉', 啴: '嘽', 啸: '嘯', 喷: '噴', 喽: '嘍', 喾: '嚳', 嗫: '囁', 嗳: '噯',
+  嘘: '噓', 嘤: '嚶', 嘱: '囑', 噜: '嚕', 嚣: '囂', 团: '團', 园: '園', 围: '圍',
+  囵: '圇', 国: '國', 图: '圖', 圆: '圓', 圣: '聖', 圹: '壙', 场: '場', 坏: '壞',
+  块: '塊', 坚: '堅', 坛: '壇', 坜: '壢', 坝: '壩', 坞: '塢', 坟: '墳', 坠: '墜',
+  垄: '壟', 垅: '壠', 垆: '壚', 垒: '壘', 垦: '墾', 垩: '堊', 垫: '墊', 垭: '埡',
+  垱: '壋', 垲: '塏', 垴: '堖', 埘: '塒', 埙: '塤', 埚: '堝', 堑: '塹', 堕: '墮',
+  墙: '牆', 壮: '壯', 声: '聲', 壳: '殼', 壶: '壺', 处: '處', 备: '備', 复: '複',
+  够: '夠', 头: '頭', 夹: '夾', 夺: '奪', 奁: '奩', 奂: '奐', 奋: '奮', 奖: '獎',
+  奥: '奧', 妆: '妝', 妇: '婦', 妈: '媽', 妩: '嫵', 妪: '嫗', 妫: '媯', 姗: '姍',
+  姹: '奼', 娄: '婁', 娅: '婭', 娆: '嬈', 娇: '嬌', 娈: '孌', 娲: '媧', 娴: '嫻',
+  婴: '嬰', 婵: '嬋', 婶: '嬸', 嫒: '嬡', 嫔: '嬪', 嫱: '嬙', 孙: '孫', 学: '學',
+  孪: '孿', 宁: '寧', 宝: '寶', 实: '實', 宠: '寵', 审: '審', 宪: '憲', 宫: '宮',
+  宽: '寬', 宾: '賓', 寝: '寢', 对: '對', 寻: '尋', 导: '導', 寿: '壽', 将: '將',
+  尔: '爾', 尘: '塵', 尝: '嘗', 尧: '堯', 尴: '尷', 尸: '屍', 尽: '盡', 层: '層',
+  屉: '屜', 届: '屆', 属: '屬', 屡: '屢', 屦: '屨', 屿: '嶼', 岁: '歲', 岂: '豈',
+  岖: '嶇', 岗: '崗', 岘: '峴', 岚: '嵐', 岛: '島', 岭: '嶺', 岳: '嶽', 岽: '崬',
+  岿: '巋', 峃: '嶨', 峄: '嶧', 峡: '峽', 峣: '嶢', 峤: '嶠', 峥: '崢', 峦: '巒',
+  崂: '嶗', 崃: '崍', 崭: '嶄', 嵘: '嶸', 嵚: '嶔', 嵛: '崳', 嵝: '嶁', 巅: '巔',
+  巩: '鞏', 巯: '巰', 币: '幣', 帅: '帥', 师: '師', 帐: '帳', 帘: '簾', 帜: '幟',
+  带: '帶', 帧: '幀', 帮: '幫', 帱: '幬', 帻: '幘', 帼: '幗', 幂: '冪', 干: '乾',
+  并: '並', 广: '廣', 庄: '莊', 庆: '慶', 庐: '廬', 庑: '廡', 库: '庫', 应: '應',
+  庙: '廟', 庞: '龐', 废: '廢', 廪: '廩', 开: '開', 异: '異', 弃: '棄', 张: '張',
+  弥: '彌', 弪: '弳', 弯: '彎', 弹: '彈', 强: '強', 归: '歸', 当: '當', 录: '錄',
+  彦: '彥', 彷: '仿', 彻: '徹', 径: '徑', 徕: '徠', 御: '禦', 忆: '憶', 忏: '懺',
+  忧: '憂', 忾: '愾', 怀: '懷', 态: '態', 怂: '慫', 怃: '憮', 怄: '慪', 怅: '悵',
+  怆: '愴', 怜: '憐', 总: '總', 怼: '懟', 怿: '懌', 恋: '戀', 恳: '懇', 恶: '惡',
+  恸: '慟', 恹: '懨', 恺: '愷', 恻: '惻', 恼: '惱', 恽: '惲', 悦: '悅', 悫: '愨',
+  悬: '懸', 悭: '慳', 悯: '憫', 惊: '驚', 惧: '懼', 惨: '慘', 惩: '懲', 惫: '憊',
+  惬: '愜', 惭: '慚', 惮: '憚', 惯: '慣', 愤: '憤', 愦: '憒', 愿: '願', 慑: '懾',
+  慭: '憖', 懑: '懣', 懒: '懶', 戆: '戇', 戋: '戔', 戏: '戲', 戗: '戧', 战: '戰',
+  戬: '戩', 户: '戶', 扑: '撲', 执: '執', 扩: '擴', 扪: '捫', 扫: '掃', 扬: '揚',
+  扰: '擾', 抚: '撫', 抛: '拋', 抟: '摶', 抠: '摳', 抡: '掄', 抢: '搶', 护: '護',
+  报: '報', 担: '擔', 拟: '擬', 拢: '攏', 拣: '揀', 拥: '擁', 拦: '攔', 拧: '擰',
+  拨: '撥', 择: '擇', 挂: '掛', 挚: '摯', 挛: '攣', 挜: '掗', 挝: '撾', 挞: '撻',
+  挟: '挾', 挠: '撓', 挡: '擋', 挢: '撟', 挣: '掙', 挤: '擠', 挥: '揮', 挦: '撏',
+  挥: '揮', 捞: '撈', 损: '損', 捡: '撿', 换: '換', 捣: '搗', 据: '據', 掳: '擄',
+  掴: '摑', 掷: '擲', 掸: '撣', 掺: '摻', 掼: '摜', 揽: '攬', 揿: '撳', 搀: '攙',
+  搁: '擱', 搂: '摟', 搅: '攪', 携: '攜', 摄: '攝', 摅: '攄', 摆: '擺', 摇: '搖',
+  摈: '擯', 摊: '攤', 撄: '攖', 撑: '撐', 撵: '攆', 撷: '擷',撸: '擼', 撺: '攛',
+  擞: '擻', 攒: '攢', 敌: '敵', 敛: '斂', 数: '數', 斋: '齋', 斓: '斕', 斗: '鬥',
+  斩: '斬', 断: '斷', 无: '無', 旧: '舊', 时: '時', 旷: '曠', 昙: '曇', 昼: '晝',
+  显: '顯', 晋: '晉', 晒: '曬', 晓: '曉', 晔: '曄', 晕: '暈', 晖: '暉', 暂: '暫',
+  暧: '曖', 术: '術', 机: '機', 杀: '殺', 杂: '雜', 权: '權', 条: '條', 来: '來',
+  杨: '楊', 杩: '榪', 杰: '傑', 极: '極', 构: '構', 枞: '樅', 枢: '樞', 枣: '棗',
+  枥: '櫪', 枧: '梘', 枨: '棖', 枪: '槍', 枫: '楓', 枭: '梟', 柜: '櫃', 柠: '檸',
+  柽: '檉', 栀: '梔', 栅: '柵', 标: '標', 栈: '棧', 栉: '櫛', 栊: '櫳', 栋: '棟',
+  栌: '櫨', 栎: '櫟', 栏: '欄', 树: '樹', 栖: '棲', 样: '樣', 栾: '欒', 桠: '椏',
+  桡: '橈', 桢: '楨', 档: '檔', 桤: '榿', 桥: '橋', 桦: '樺', 桧: '檜', 桨: '槳',
+  桩: '樁', 梦: '夢', 梼: '檮', 梾: '棶', 梿: '槤', 检: '檢', 棂: '欞', 椁: '槨',
+  椟: '櫝', 椠: '槧', 椤: '欏', 椭: '橢', 楼: '樓', 榄: '欖', 榅: '榲', 榇: '櫬',
+  榈: '櫚', 榉: '櫸', 槚: '檟', 槛: '檻', 槟: '檳', 槠: '櫧', 横: '橫', 樯: '檣',
+  樱: '櫻', 橥: '櫫', 橱: '櫥', 橹: '櫓', 橼: '櫞', 檩: '檁', 欢: '歡', 欤: '歟',
+  欧: '歐', 欲: '慾', 歼: '殲', 殁: '歿', 殇: '殤', 残: '殘', 殒: '殞', 殓: '殮',
+  殚: '殫', 殡: '殯', 殴: '毆', 毁: '毀', 毂: '轂', 毕: '畢', 毙: '斃', 毡: '氈',
+  毵: '毿', 氇: '氌', 气: '氣', 氢: '氫', 氩: '氬', 氲: '氳', 汇: '匯', 汉: '漢',
+  汤: '湯', 汹: '洶', 沟: '溝', 没: '沒', 沣: '灃', 沤: '漚', 沥: '瀝', 沦: '淪',
+  沧: '滄', 沨: '渢', 沩: '溈', 沪: '滬', 泞: '濘', 注: '註', 泪: '淚', 泶: '澩',
+  泷: '瀧', 泸: '瀘', 泺: '濼', 泻: '瀉', 泼: '潑', 泽: '澤', 泾: '涇', 洁: '潔',
+  洒: '灑', 洼: '窪', 浃: '浹', 浅: '淺', 浆: '漿', 浇: '澆', 浈: '湞', 浊: '濁',
+  测: '測', 浍: '澮', 济: '濟', 浏: '瀏', 浐: '滻', 浑: '渾', 浒: '滸', 浓: '濃',
+  浔: '潯', 涛: '濤', 涝: '澇', 涞: '淶', 涟: '漣', 涠: '潿', 涡: '渦', 涣: '渙',
+  涤: '滌', 润: '潤', 涧: '澗', 涨: '漲', 涩: '澀', 淀: '澱', 渊: '淵', 渌: '淥',
+  渍: '漬', 渎: '瀆', 渐: '漸', 渑: '澠', 渔: '漁', 渖: '瀋', 渗: '滲', 温: '溫',
+  游: '遊', 湾: '灣', 湿: '濕', 溃: '潰', 溅: '濺', 溆: '漵', 滚: '滾', 滞: '滯',
+  滟: '灩', 滠: '灄', 满: '滿', 滤: '濾', 滥: '濫', 滦: '灤', 滨: '濱', 滩: '灘',
+  滪: '澦', 漤: '灠', 潆: '瀠', 潇: '瀟', 潋: '瀲', 潍: '濰', 潜: '潛', 潴: '瀦',
+  澜: '瀾', 濑: '瀨', 濒: '瀕', 灏: '灝', 灭: '滅', 灯: '燈', 灵: '靈', 灾: '災',
+  灿: '燦', 炀: '煬', 炉: '爐', 炖: '燉', 炜: '煒', 炝: '熗', 点: '點', 炼: '煉',
+  炽: '熾', 烁: '爍', 烂: '爛', 烃: '烴', 烛: '燭', 烟: '煙', 烦: '煩', 烧: '燒',
+  烨: '燁', 烩: '燴', 烫: '燙', 烬: '燼', 热: '熱', 焕: '煥', 焖: '燜', 焘: '燾',
+  煴: '熅', 爱: '愛', 爷: '爺', 牍: '牘', 牦: '氂', 牵: '牽', 牺: '犧', 犊: '犢',
+  状: '狀', 犷: '獷', 犸: '獁', 犹: '猶', 狈: '狽', 独: '獨', 狭: '狹', 狮: '獅',
+  狯: '獪', 狰: '猙', 狱: '獄', 狲: '猻', 猃: '獫', 猎: '獵', 猕: '獼', 猡: '玀',
+  猪: '豬', 猫: '貓', 献: '獻', 獭: '獺', 玑: '璣', 玛: '瑪', 玮: '瑋', 环: '環',
+  现: '現', 玱: '瑲', 玺: '璽', 珐: '琺', 珑: '瓏', 珰: '璫', 琐: '瑣', 琼: '瓊',
+  瑶: '瑤', 瑷: '璦', 璎: '瓔', 瓒: '瓚', 瓮: '甕', 电: '電', 画: '畫', 畅: '暢',
+  畴: '疇', 疖: '癤', 疗: '療', 疟: '瘧', 疠: '癘', 疡: '瘍', 疬: '癧', 疮: '瘡',
+  疯: '瘋', 疱: '皰', 疴: '痾', 痈: '癰', 痉: '痙', 痒: '癢', 痨: '癆', 痪: '瘓',
+  痫: '癇', 瘅: '癉', 瘗: '瘞', 瘘: '瘻', 瘪: '癟', 瘫: '癱', 瘾: '癮', 瘿: '癭',
+  癞: '癩', 癣: '癬', 癫: '癲', 皑: '皚', 皱: '皺', 皲: '皸', 盏: '盞', 盐: '鹽',
+  监: '監', 盖: '蓋', 盗: '盜', 盘: '盤', 眍: '瞘', 眦: '眥', 眬: '矓', 着: '著',
+  睁: '睜', 睐: '睞', 睑: '瞼', 瞒: '瞞', 瞩: '矚', 矫: '矯', 矶: '磯', 矾: '礬',
+  矿: '礦', 码: '碼', 砖: '磚', 砗: '硨', 砚: '硯', 砜: '碸', 砺: '礪', 砻: '礱',
+  砾: '礫', 础: '礎', 硁: '硜', 硕: '碩', 硖: '硤', 硗: '磽', 硙: '磑', 硚: '礄',
+  确: '確', 碱: '鹼', 礼: '禮', 祎: '禕', 祢: '禰', 祯: '禎', 祷: '禱', 祸: '禍',
+  禀: '稟', 禄: '祿', 禅: '禪', 离: '離', 秃: '禿', 秆: '稈', 种: '種', 积: '積',
+  称: '稱', 秽: '穢', 税: '稅', 稣: '穌', 稳: '穩', 穑: '穡', 穷: '窮', 窃: '竊',
+  窍: '竅', 窎: '窵', 窑: '窯', 窜: '竄', 窝: '窩', 窥: '窺', 窦: '竇', 窭: '窶',
+  竖: '豎', 竞: '競', 笃: '篤', 笋: '筍', 笔: '筆', 笕: '筧', 笺: '箋', 笼: '籠',
+  笾: '籩', 筚: '篳', 筛: '篩', 筜: '簹', 筝: '箏', 筹: '籌', 签: '簽', 简: '簡',
+  箓: '籙', 箦: '簀', 箧: '篋', 箨: '籜', 箩: '籮', 箪: '簞', 箫: '簫', 篑: '簣',
+  篓: '簍', 篮: '籃', 篱: '籬', 簖: '籪', 籁: '籟', 籴: '糴', 类: '類', 籼: '秈',
+  粜: '糶', 粝: '糲', 粤: '粵', 粪: '糞', 粮: '糧', 糁: '糝', 糇: '餱', 紧: '緊',
+  絷: '縶', 纟: '糹', 纠: '糾', 纡: '紆', 红: '紅', 纣: '紂', 纤: '纖', 约: '約',
+  级: '級', 纨: '紈', 纪: '紀', 纫: '紉', 纬: '緯', 纯: '純', 纰: '紕', 纱: '紗',
+  纲: '綱', 纳: '納', 纵: '縱', 纶: '綸', 纷: '紛', 纸: '紙', 纹: '紋', 纺: '紡',
+  纽: '紐', 纾: '紓', 线: '線', 绀: '紺', 绁: '紲', 绂: '紱', 练: '練', 组: '組',
+  绅: '紳', 细: '細', 织: '織', 终: '終', 绉: '縐', 绊: '絆', 绋: '紼', 绌: '絀',
+  绍: '紹', 绎: '繹', 经: '經', 绐: '紿', 绑: '綁', 绒: '絨', 结: '結', 绔: '絝',
+  绕: '繞', 绘: '繪', 给: '給', 绚: '絢', 绛: '絳', 络: '絡', 绝: '絕', 绞: '絞',
+  统: '統', 绠: '綆', 绡: '綃', 绢: '絹', 绣: '繡', 绥: '綏', 绦: '絛', 继: '繼',
+  绨: '綈', 绩: '績', 绪: '緒', 绫: '綾', 续: '續', 绮: '綺', 绯: '緋', 绰: '綽',
+  绱: '緔', 绲: '緄', 绳: '繩', 维: '維', 绵: '綿', 绶: '綬', 绷: '繃', 绸: '綢',
+  绹: '綯', 绺: '綹', 绻: '綣', 综: '綜', 绽: '綻', 绾: '綰', 绿: '綠', 缀: '綴',
+  缁: '緇', 缂: '緙', 缃: '緗', 缄: '緘', 缅: '緬', 缆: '纜', 缇: '緹', 缈: '緲',
+  缉: '緝', 缊: '縕', 缋: '繢', 缌: '緦', 缍: '綞', 缎: '緞', 缏: '緶', 缑: '緱',
+  缒: '縋', 缓: '緩', 缔: '締', 缕: '縷', 编: '編', 缗: '緡', 缘: '緣', 缙: '縉',
+  缚: '縛', 缛: '縟', 缜: '縝', 缝: '縫', 缟: '縞', 缠: '纏', 缡: '縭', 缢: '縊',
+  缣: '縑', 缤: '繽', 缥: '縹', 缦: '縵', 缧: '縲', 缨: '纓', 缩: '縮', 缪: '繆',
+  缫: '繅', 缬: '纈', 缭: '繚', 缮: '繕', 缯: '繒', 缰: '韁', 缱: '繾', 缲: '繰',
+  缳: '繯', 缴: '繳', 缵: '纘', 罂: '罌', 网: '網', 罗: '羅', 罚: '罰', 罢: '罷',
+  罴: '羆', 羁: '羈', 羟: '羥', 羡: '羨', 翘: '翹', 耀: '耀', 耧: '耬', 耸: '聳',
+  耻: '恥', 聂: '聶', 聋: '聾', 职: '職', 联: '聯', 聩: '聵', 聪: '聰', 肃: '肅',
+  肠: '腸', 肤: '膚', 肮: '骯', 肴: '餚', 肾: '腎', 肿: '腫', 胀: '脹', 胁: '脅',
+  胆: '膽', 胜: '勝', 胧: '朧', 胨: '腖', 胪: '臚', 胫: '脛', 胶: '膠', 脉: '脈',
+  脍: '膾', 脏: '髒', 脐: '臍', 脑: '腦', 脓: '膿', 脔: '臠', 脚: '腳', 脱: '脫',
+  脶: '腡', 脸: '臉', 腊: '臘', 腌: '醃', 腘: '膕', 腻: '膩', 腼: '靦', 腽: '膃',
+  腾: '騰', 膑: '臏', 臜: '臢', 舆: '輿', 舍: '捨', 舰: '艦', 舱: '艙', 艰: '艱',
+  艳: '艷', 艺: '藝', 节: '節', 芈: '羋', 芗: '薌', 芜: '蕪', 芦: '蘆', 苁: '蓯',
+  苇: '葦', 苈: '藶', 苋: '莧', 苌: '萇', 苍: '蒼', 苎: '苧', 苏: '蘇', 苹: '蘋',
+  范: '範', 茎: '莖', 茏: '蘢', 茑: '蔦', 茔: '塋', 茕: '煢', 茧: '繭', 荆: '荊',
+  荐: '薦', 荙: '薘', 荚: '莢', 荛: '蕘', 荜: '蓽', 荞: '蕎', 荟: '薈', 荠: '薺',
+  荡: '蕩', 荣: '榮', 荤: '葷', 荥: '滎', 荦: '犖', 荧: '熒', 荨: '蕁', 荩: '藎',
+  荪: '蓀', 荫: '蔭', 荬: '蕒', 荭: '葒', 荮: '葤', 药: '藥', 莅: '蒞', 莆: '莆',
+  莲: '蓮', 莳: '蒔', 莴: '萵', 莶: '薟', 获: '獲', 莹: '瑩', 莺: '鶯', 萤: '螢',
+  营: '營', 萦: '縈', 萧: '蕭', 萨: '薩', 葱: '蔥', 蒇: '蕆', 蒉: '蕢', 蒋: '蔣',
+  蒌: '蔞', 蒙: '蒙', 蓝: '藍', 蓟: '薊', 蓠: '蘺', 蓣: '蕷', 蓥: '鎣', 蓦: '驀',
+  蔷: '薔', 蔹: '蘞', 蔺: '藺', 蔼: '藹', 蕲: '蘄', 蕴: '蘊', 薮: '藪', 藓: '蘚',
+  虏: '虜', 虑: '慮', 虚: '虛', 虫: '蟲', 虬: '虯', 虮: '蟣', 虽: '雖', 虾: '蝦',
+  虿: '蠆', 蚀: '蝕', 蚁: '蟻', 蚂: '螞', 蚕: '蠶', 蚝: '蠔', 蛊: '蠱', 蛎: '蠣',
+  蛏: '蟶', 蛮: '蠻', 蛰: '蟄', 蛱: '蛺', 蛲: '蟯', 蛳: '螄', 蛴: '蠐', 蜕: '蛻',
+  蜗: '蝸', 蜡: '蠟', 蝇: '蠅', 蝈: '蟈', 蝉: '蟬', 蝎: '蠍', 蝼: '螻', 螀: '螿',
+  螨: '蟎', 蟏: '蠨', 衅: '釁', 衔: '銜', 补: '補', 表: '表', 衬: '襯', 袄: '襖',
+  袅: '裊', 袜: '襪', 袭: '襲', 袯: '襏', 装: '裝', 裆: '襠', 裢: '褳', 裣: '襝',
+  裤: '褲', 裥: '襇', 褛: '褸', 褴: '襤', 襁: '繈', 见: '見', 观: '觀', 规: '規',
+  觅: '覓', 视: '視', 觇: '覘', 览: '覽', 觉: '覺', 觊: '覬', 觋: '覡', 觌: '覿',
+  觎: '覦', 觏: '覯', 觐: '覲', 觑: '覷', 觞: '觴', 触: '觸', 觯: '觶', 誉: '譽',
+  誊: '謄', 讠: '訁', 计: '計', 订: '訂', 讣: '訃', 认: '認', 讥: '譏', 讦: '訐',
+  讧: '訌', 讨: '討', 让: '讓', 讪: '訕', 讫: '訖', 训: '訓', 议: '議', 讯: '訊',
+  记: '記', 讲: '講', 讳: '諱', 讴: '謳', 讵: '詎', 讶: '訝', 讷: '訥', 许: '許',
+  讹: '訛', 论: '論', 讼: '訟', 讽: '諷', 设: '設', 访: '訪', 诀: '訣', 证: '證',
+  诂: '詁', 诃: '訶', 评: '評', 诅: '詛', 识: '識', 诈: '詐', 诉: '訴', 诊: '診',
+  诋: '詆', 诌: '謅', 词: '詞', 诎: '詘', 诏: '詔', 译: '譯', 诒: '詒', 诓: '誆',
+  诔: '誄', 试: '試', 诖: '詿', 诗: '詩', 诘: '詰', 诙: '詼', 诚: '誠', 诛: '誅',
+  诜: '詵', 话: '話', 诞: '誕', 诟: '詬', 诠: '詮', 诡: '詭', 询: '詢', 诣: '詣',
+  诤: '諍', 该: '該', 详: '詳', 诧: '詫', 诨: '諢', 诩: '詡', 诫: '誡', 诬: '誣',
+  语: '語', 诮: '誚', 误: '誤', 诰: '誥', 诱: '誘', 诲: '誨', 诳: '誑', 说: '說',
+  诵: '誦', 诶: '誒', 请: '請', 诸: '諸', 诹: '諏', 诺: '諾', 读: '讀', 诼: '諑',
+  诽: '誹', 课: '課', 诿: '諉', 谀: '諛', 谁: '誰', 谂: '諗', 调: '調', 谄: '諂',
+  谅: '諒', 谆: '諄', 谇: '誶', 谈: '談', 谊: '誼', 谋: '謀', 谌: '諶', 谍: '諜',
+  谎: '謊', 谏: '諫', 谐: '諧', 谑: '謔', 谒: '謁', 谓: '謂', 谔: '諤', 谕: '諭',
+  谖: '諼', 谗: '讒', 谘: '諮', 谙: '諳', 谚: '諺', 谛: '諦', 谜: '謎', 谝: '諞',
+  谟: '謨', 谠: '讜', 谡: '謖', 谢: '謝', 谣: '謠', 谤: '謗', 谥: '諡', 谦: '謙',
+  谧: '謐', 谨: '謹', 谩: '謾', 谪: '謫', 谫: '譾', 谬: '謬', 谭: '譚', 谮: '譖',
+  谯: '譙', 谰: '讕', 谱: '譜', 谲: '譎', 谳: '讞', 谴: '譴', 谵: '譫', 谶: '讖',
+  谷: '穀', 豁: '豁', 象: '象', 贝: '貝', 贞: '貞', 负: '負', 贡: '貢', 财: '財',
+  责: '責', 贤: '賢', 败: '敗', 账: '帳', 货: '貨', 质: '質', 贩: '販', 贪: '貪',
+  贫: '貧', 贬: '貶', 购: '購', 贮: '貯', 贯: '貫', 贰: '貳', 贱: '賤', 贲: '賁',
+  贳: '貰', 贴: '貼', 贵: '貴', 贶: '貺', 贷: '貸', 贸: '貿', 费: '費', 贺: '賀',
+  贻: '貽', 贼: '賊', 贽: '贄', 贾: '賈', 贿: '賄', 赀: '貲', 赁: '賃', 赂: '賂',
+  赃: '贓', 资: '資', 赅: '賅', 赆: '贐', 赇: '賕', 赈: '賑', 赉: '賚', 赊: '賒',
+  赋: '賦', 赌: '賭', 赍: '齎', 赎: '贖', 赏: '賞', 赐: '賜', 赑: '贔', 赒: '賙',
+  赔: '賠', 赕: '賧', 赖: '賴', 赗: '賵', 赘: '贅', 赙: '賻', 赚: '賺', 赛: '賽',
+  赜: '賾', 赝: '贗', 赞: '贊', 赠: '贈', 赡: '贍', 赢: '贏', 赣: '贛', 赵: '趙',
+  赶: '趕', 趋: '趨', 趱: '趲', 趸: '躉', 跃: '躍', 跄: '蹌', 跖: '蹠', 跞: '躒',
+  践: '踐', 跶: '躂', 跷: '蹺', 跸: '蹕', 跹: '躚', 跻: '躋', 踊: '踴', 踌: '躊',
+  踪: '蹤', 踬: '躓', 踯: '躑', 蹑: '躡', 蹒: '蹣', 蹰: '躕', 蹿: '躥', 躏: '躪',
+  躜: '躦', 车: '車', 轧: '軋', 轨: '軌', 轩: '軒', 轪: '軑', 轫: '軔', 转: '轉',
+  轭: '軛', 轮: '輪', 软: '軟', 轰: '轟', 轱: '軲', 轲: '軻', 轳: '轤', 轴: '軸',
+  轵: '軹', 轶: '軼', 轷: '軤', 轸: '軫', 轹: '轢', 轺: '軺', 轻: '輕', 轼: '軾',
+  载: '載', 轾: '輊', 轿: '轎', 辁: '輇', 辂: '輅', 较: '較', 辄: '輒', 辅: '輔',
+  辆: '輛', 辇: '輦', 辈: '輩', 辉: '輝', 辊: '輥', 辋: '輞', 辌: '輬', 辍: '輟',
+  辎: '輜', 辏: '輳', 辐: '輻', 辑: '輯', 输: '輸', 辔: '轡', 辕: '轅', 辖: '轄',
+  辗: '輾', 辙: '轍', 辚: '轔', 辞: '辭', 辟: '闢', 辩: '辯', 辫: '辮', 边: '邊',
+  辽: '遼', 达: '達', 迁: '遷', 过: '過', 迈: '邁', 运: '運', 还: '還', 这: '這',
+  进: '進', 远: '遠', 违: '違', 连: '連', 迟: '遲', 迩: '邇', 迳: '逕', 迹: '跡',
+  适: '適', 选: '選', 逊: '遜', 递: '遞', 逦: '邐', 逻: '邏', 遗: '遺', 遥: '遙',
+  邓: '鄧', 邮: '郵', 邻: '鄰', 郁: '鬱', 郏: '郟', 郐: '鄶', 郑: '鄭', 郓: '鄆',
+  郦: '酈', 郧: '鄖', 郸: '鄲', 酝: '醞', 酦: '醱', 酱: '醬', 酽: '釅', 酾: '釃',
+  酿: '釀', 释: '釋', 里: '裡', 鉴: '鑑', 钅: '釒', 钆: '釓', 钇: '釔', 针: '針',
+  钉: '釘', 钊: '釗', 钋: '釙', 钌: '釕', 钍: '釷', 钎: '釺', 钏: '釧', 钐: '釤',
+  钒: '釩', 钓: '釣', 钔: '鍆', 钕: '釹', 钖: '鍚', 钗: '釵', 钙: '鈣', 钛: '鈦',
+  钝: '鈍', 钞: '鈔', 钟: '鐘', 钠: '鈉', 钡: '鋇', 钢: '鋼', 钣: '鈑', 钤: '鈐',
+  钥: '鑰', 钦: '欽', 钧: '鈞', 钨: '鎢', 钩: '鉤', 钪: '鈧', 钫: '鈁', 钬: '鈥',
+  钭: '鈄', 钮: '鈕', 钯: '鈀', 钰: '鈺', 钱: '錢', 钲: '鉦', 钳: '鉗', 钴: '鈷',
+  钵: '缽', 钶: '鈳', 钷: '鉕', 钸: '鈽', 钹: '鈸', 钺: '鉞', 钻: '鑽', 钼: '鉬',
+  钽: '鉭', 钾: '鉀', 钿: '鈿', 铀: '鈾', 铁: '鐵', 铂: '鉑', 铃: '鈴', 铄: '鑠',
+  铅: '鉛', 铆: '鉚', 铈: '鈰', 铉: '鉉', 铊: '鉈', 铋: '鉍', 铌: '鈮', 铍: '鈹',
+  铎: '鐸', 铐: '銬', 铑: '銠', 铒: '鉺', 铕: '銪', 铗: '鋏', 铘: '鋣', 铙: '鐃',
+  铛: '鐺', 铜: '銅', 铝: '鋁', 铞: '銱', 铟: '銦', 铠: '鎧', 铡: '鍘', 铢: '銖',
+  铣: '銑', 铤: '鋌', 铥: '銩', 铧: '鏵', 铨: '銓', 铩: '鎩', 铪: '鉿', 铫: '銚',
+  铬: '鉻', 铭: '銘', 铮: '錚', 铯: '銫', 铰: '鉸', 铱: '銥', 铲: '鏟', 铳: '銃',
+  铴: '鐋', 铵: '銨', 银: '銀', 铷: '銣', 铸: '鑄', 铹: '鐒', 铺: '鋪', 铻: '鋙',
+  铼: '錸', 铽: '鋱', 链: '鏈', 铿: '鏗', 销: '銷', 锁: '鎖', 锂: '鋰', 锃: '鋥',
+  锄: '鋤', 锅: '鍋', 锆: '鋯', 锇: '鋨', 锈: '鏽', 锉: '銼', 锊: '鋝', 锋: '鋒',
+  锌: '鋅', 锍: '鋶', 锎: '鐦', 锏: '鐧', 锐: '銳', 锑: '銻', 锒: '鋃', 锓: '鋟',
+  锔: '鋦', 锕: '錒', 锖: '錆', 锗: '鍺', 锘: '鍩', 错: '錯', 锚: '錨', 锛: '錛',
+  锜: '錡', 锝: '鍀', 锞: '錁', 锟: '錕', 锡: '錫', 锢: '錮', 锣: '鑼', 锤: '錘',
+  锥: '錐', 锦: '錦', 锧: '鑕', 锨: '鍁', 锩: '錈', 锪: '鍃', 锫: '錇', 锬: '錟',
+  锭: '錠', 键: '鍵', 锯: '鋸', 锰: '錳', 锱: '錙', 锲: '鍥', 锴: '鍇', 锵: '鏘',
+  锶: '鍶', 锷: '鍔', 锸: '鍤', 锹: '鍬', 锺: '鍾', 锻: '鍛', 锼: '鎪', 锾: '鍰',
+  锿: '鎄', 镀: '鍍', 镁: '鎂', 镂: '鏤', 镃: '鎡', 镄: '鐨', 镅: '鎇', 镆: '鏌',
+  镇: '鎮', 镈: '鎛', 镉: '鎘', 镊: '鑷', 镋: '钂', 镌: '鐫', 镍: '鎳', 镎: '鎿',
+  镏: '鎦', 镐: '鎬', 镑: '鎊', 镒: '鎰', 镓: '鎵', 镔: '鑌', 镖: '鏢', 镗: '鏜',
+  镘: '鏝', 镙: '鏍', 镚: '鏰', 镛: '鏞', 镜: '鏡', 镝: '鏑', 镞: '鏃', 镟: '鏇',
+  镠: '鏐', 镡: '鐔', 镢: '钁', 镣: '鐐', 镤: '鏷', 镥: '鑥', 镦: '鐓', 镧: '鑭',
+  镨: '鐠', 镩: '鑹', 镪: '鏹', 镫: '鐙', 镬: '鑊', 镭: '鐳', 镮: '鐶', 镯: '鐲',
+  镰: '鐮', 镱: '鐿', 镲: '鑔', 镳: '鑣', 镴: '鑞', 长: '長', 门: '門', 闩: '閂',
+  闪: '閃', 闫: '閆', 闭: '閉', 问: '問', 闯: '闖', 闰: '閏', 闱: '闈', 闲: '閒',
+  闳: '閎', 间: '間', 闵: '閔', 闶: '閌', 闷: '悶', 闸: '閘', 闹: '鬧', 闺: '閨',
+  闻: '聞', 闼: '闥', 闽: '閩', 闾: '閭', 闿: '闓', 阀: '閥', 阁: '閣', 阂: '閡',
+  阃: '閫', 阄: '鬮', 阅: '閱', 阆: '閬', 阈: '閾', 阉: '閹', 阊: '閶', 阋: '鬩',
+  阌: '閿', 阍: '閽', 阎: '閻', 阏: '閼', 阐: '闡', 阑: '闌', 阒: '闃', 阔: '闊',
+  阕: '闋', 阖: '闔', 阗: '闐', 阙: '闕', 阚: '闞', 队: '隊', 阳: '陽', 阴: '陰',
+  阵: '陣', 阶: '階', 际: '際', 陆: '陸', 陇: '隴', 陈: '陳', 陉: '陘', 陕: '陝',
+  陧: '隉', 陨: '隕', 险: '險', 随: '隨', 隐: '隱', 隶: '隸', 隽: '雋', 难: '難',
+  雏: '雛', 雳: '靂', 雾: '霧', 霁: '霽', 霉: '黴', 靓: '靚', 静: '靜', 面: '面',
+  鞑: '韃', 鞒: '鞽', 鞯: '韉', 韦: '韋', 韧: '韌', 韩: '韓', 韪: '韙', 韫: '韞',
+  韬: '韜', 韵: '韻', 页: '頁', 顶: '頂', 顷: '頃', 项: '項', 顺: '順', 须: '須',
+  顽: '頑', 顾: '顧', 顿: '頓', 颀: '頎', 颁: '頒', 颂: '頌', 颃: '頏', 预: '預',
+  颅: '顱', 领: '領', 颇: '頗', 颈: '頸', 颉: '頡', 颊: '頰', 颌: '頜', 颍: '潁',
+  颏: '頦', 颐: '頤', 频: '頻', 颓: '頹', 颔: '頷', 颖: '穎', 颗: '顆', 题: '題',
+  颚: '顎', 颛: '顓', 颜: '顏', 额: '額', 颞: '顳', 颟: '顢', 颠: '顛', 颡: '顙',
+  颢: '顥', 颤: '顫', 颥: '顬', 颦: '顰', 颧: '顴', 风: '風', 飏: '颺', 飐: '颭',
+  飑: '颮', 飒: '颯', 飓: '颶', 飕: '颼', 飘: '飄', 飙: '飆', 飚: '飈', 飞: '飛',
+  饣: '飠', 饥: '飢', 饧: '餳', 饨: '飩', 饩: '餼', 饪: '飪', 饫: '飫', 饬: '飭',
+  饭: '飯', 饮: '飲', 饯: '餞', 饰: '飾', 饱: '飽', 饲: '飼', 饳: '飿', 饴: '飴',
+  饵: '餌', 饶: '饒', 饷: '餉', 饸: '餄', 饹: '餎', 饺: '餃', 饻: '餏', 饼: '餅',
+  饽: '餑', 饿: '餓', 馀: '餘', 馁: '餒', 馂: '餕', 馃: '餜', 馄: '餛', 馅: '餡',
+  馆: '館', 馇: '餷', 馈: '饋', 馊: '餿', 馋: '饞', 馍: '饃', 馏: '餾', 馐: '饈',
+  馑: '饉', 馒: '饅', 馓: '饊', 馔: '饌', 馕: '饢', 马: '馬', 驭: '馭', 驮: '馱',
+  驯: '馴', 驰: '馳', 驱: '驅', 驳: '駁', 驴: '驢', 驵: '駔', 驶: '駛', 驷: '駟',
+  驸: '駙', 驹: '駒', 驺: '騶', 驻: '駐', 驼: '駝', 驽: '駑', 驾: '駕', 驿: '驛',
+  骀: '駘', 骁: '驍', 骂: '罵', 骄: '驕', 骅: '驊', 骆: '駱', 骇: '駭', 骈: '駢',
+  骊: '驪', 骋: '騁', 验: '驗', 骏: '駿', 骐: '騏', 骑: '騎', 骒: '騍', 骓: '騅',
+  骖: '驂', 骗: '騙', 骘: '騭', 骚: '騷', 骛: '騖', 骜: '驁', 骝: '騮', 骞: '騫',
+  骟: '騸', 骠: '驃', 骡: '騾', 骢: '驄', 骣: '驏', 骤: '驟', 骥: '驥', 骧: '驤',
+  髅: '髏', 髋: '髖', 髌: '髕', 鬓: '鬢', 魇: '魘', 鱼: '魚', 鱿: '魷', 鲁: '魯',
+  鲂: '魴', 鲅: '鮁', 鲆: '鮃', 鲇: '鮎', 鲈: '鱸', 鲋: '鮒', 鲍: '鮑', 鲎: '鱟',
+  鲐: '鮐', 鲑: '鮭', 鲒: '鮚', 鲔: '鮪', 鲕: '鮞', 鲚: '鱭', 鲛: '鮫', 鲜: '鮮',
+  鲞: '鯗', 鲟: '鱘', 鲠: '鯁', 鲡: '鱺', 鲢: '鰱', 鲣: '鰹', 鲤: '鯉', 鲥: '鰣',
+  鲦: '鰷', 鲧: '鯀', 鲨: '鯊', 鲩: '鯇', 鲫: '鯽', 鲭: '鯖', 鲮: '鯪', 鲰: '鯫',
+  鲱: '鯡', 鲲: '鯤', 鲳: '鯧', 鲴: '鯝', 鲵: '鯢', 鲶: '鯰', 鲷: '鯛', 鲸: '鯨',
+  鲺: '鯴', 鲻: '鯔', 鲼: '鱝', 鲽: '鰈', 鲾: '鰏', 鲿: '鱨', 鳀: '鯷', 鳁: '鰮',
+  鳂: '鰃', 鳃: '鰓', 鳄: '鱷', 鳅: '鰍', 鳆: '鰒', 鳇: '鰉', 鳈: '鰁', 鳉: '鱂',
+  鳊: '鯿', 鳋: '鰠', 鳌: '鰲', 鳍: '鰭', 鳎: '鰨', 鳏: '鰥', 鳐: '鰩', 鳓: '鰳',
+  鳔: '鰾', 鳕: '鱈', 鳖: '鱉', 鳗: '鰻', 鳘: '鰵', 鳙: '鱅', 鳜: '鱖', 鳝: '鱔',
+  鳞: '鱗', 鳟: '鱒', 鳠: '鱯', 鸟: '鳥', 鸠: '鳩', 鸡: '雞', 鸢: '鳶', 鸣: '鳴',
+  鸥: '鷗', 鸦: '鴉', 鸧: '鶬', 鸨: '鴇', 鸩: '鴆', 鸪: '鴣', 鸫: '鶇', 鸬: '鸕',
+  鸭: '鴨', 鸯: '鴦', 鸱: '鴟', 鸲: '鴝', 鸳: '鴛', 鸵: '鴕', 鸶: '鷥', 鸷: '鷙',
+  鸸: '鴯', 鸹: '鴰', 鸺: '鵂', 鸻: '鴴', 鸼: '鵃', 鸽: '鴿', 鸾: '鸞', 鸿: '鴻',
+  鹁: '鵓', 鹂: '鸝', 鹃: '鵑', 鹄: '鵠', 鹅: '鵝', 鹆: '鵒', 鹇: '鷳', 鹈: '鵜',
+  鹉: '鵡', 鹊: '鵲', 鹋: '鶓', 鹌: '鵪', 鹍: '鵾', 鹎: '鵯', 鹏: '鵬', 鹐: '鵮',
+  鹑: '鶉', 鹒: '鶊', 鹓: '鵷', 鹔: '鷫', 鹕: '鶘', 鹖: '鶡', 鹗: '鶚', 鹘: '鶻',
+  鹙: '鶖', 鹚: '鶿', 鹛: '鶥', 鹜: '鶩', 鹞: '鷂', 鹟: '鶲', 鹠: '鶹', 鹡: '鶺',
+  鹢: '鷁', 鹣: '鶼', 鹤: '鶴', 鹥: '鷖', 鹦: '鸚', 鹧: '鷓', 鹨: '鷚', 鹩: '鷯',
+  鹪: '鷦', 鹫: '鷲', 鹬: '鷸', 鹭: '鷺', 鹯: '鸇', 鹰: '鷹', 鹱: '鸌', 鹳: '鸛',
+  鹾: '鹺', 麦: '麥', 麸: '麩', 黄: '黃', 黉: '黌', 黩: '黷', 黪: '黲', 黾: '黽',
+  鼋: '黿', 鼍: '鼉', 鼹: '鼴', 齐: '齊', 齑: '齏', 齿: '齒', 龀: '齔', 龃: '齟',
+  龄: '齡', 龅: '齙', 龆: '齠', 龇: '齜', 龈: '齦', 龉: '齬', 龊: '齪', 龋: '齲',
+  龌: '齷', 龙: '龍', 龚: '龔', 龛: '龕',
+}));
+
+function toTraditionalChinese(text) {
+  if (!text) return text;
+  let result = text;
+  for (const [from, to] of SIMPLIFIED_PHRASE_MAP) {
+    result = result.replace(new RegExp(escapeRegex(from), 'g'), to);
+  }
+  return [...result].map((ch) => SIMPLIFIED_CHAR_MAP.get(ch) || ch).join('');
+}
+
+function applyRulesToSrt(srtContent, rules, options = {}) {
+  const changes = [];
+  const forceTraditional = options.forceTraditional === true || rules.forceTraditional === true;
+
+  function applyToText(text) {
+    let result = text;
+
+    // 1. Remove fillers
+    if (rules.fillers.length > 0) {
+      for (const filler of rules.fillers) {
+        const before = result;
+        result = result.replace(new RegExp(escapeRegex(filler), 'gi'), (match) => {
+          changes.push({ type: 'remove_filler', original: match, cleaned: '' });
+          return '';
+        });
+      }
+    }
+
+    // 2. Normalize terms
+    for (const { from, to } of rules.normalizeTerms) {
+      const before = result;
+      result = result.replace(new RegExp(escapeRegex(from), 'gi'), (match) => {
+        if (match !== to) changes.push({ type: 'normalize_term', original: match, cleaned: to });
+        return to;
+      });
+    }
+
+    // 3. Custom replacements (case-insensitive)
+    for (const { from, to } of rules.customReplacements) {
+      const before = result;
+      result = result.replace(new RegExp(escapeRegex(from), 'gi'), (match) => {
+        if (match !== to) changes.push({ type: 'custom_replace', original: match, cleaned: to });
+        return to;
+      });
+    }
+
+    // 4. Literal replacements
+    for (const { from, to } of rules.literalReplacements) {
+      const before = result;
+      result = result.replace(new RegExp(escapeRegex(from), 'gi'), (match) => {
+        if (match !== to) changes.push({ type: 'literal_replace', original: match, cleaned: to });
+        return to;
+      });
+    }
+
+    // 5. Regex replacements
+    for (const { pattern, replacement } of rules.regexReplacements) {
+      const before = result;
+      pattern.lastIndex = 0;
+      result = result.replace(pattern, replacement);
+      if (result !== before) {
+        changes.push({ type: 'regex_replace', pattern: pattern.source, cleaned: result });
+      }
+    }
+
+    // 6. Remove specified punctuation
+    if (rules.removePunctuation.size > 0) {
+      const punctChars = escapeRegex([...rules.removePunctuation].join(''));
+      const before = result;
+      result = result.replace(new RegExp(`[${punctChars}]`, 'g'), '');
+      if (result !== before) {
+        changes.push({ type: 'remove_punctuation', cleaned: result });
+      }
+    }
+
+    // Clean up multiple spaces
+    const beforeSpaces = result;
+    result = result.replace(/\s{2,}/g, ' ');
+    if (result !== beforeSpaces) {
+      changes.push({ type: 'space_cleanup', cleaned: result });
+    }
+
+    if (forceTraditional) {
+      const beforeTraditional = result;
+      result = toTraditionalChinese(result);
+      if (result !== beforeTraditional) {
+        changes.push({ type: 'traditionalize', original: beforeTraditional, cleaned: result });
+      }
+    }
+
+    return result;
+  }
+
+  // Parse SRT and apply rules to text content only
+  const blocks = srtContent.split(/\r?\n\r?\n/).filter((b) => b.trim());
+  const cues = [];
+
+  for (const block of blocks) {
+    const lines = block.trim().split(/\r?\n/);
+    if (lines.length < 2) continue;
+
+    const cue = { index: cues.length + 1, timespan: lines[1] || '', textLines: [], originalText: '', cleanedText: '' };
+
+    // Find the timespan line (contains -->)
+    let textStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('-->')) {
+        cue.timespan = lines[i];
+        textStart = i + 1;
+        break;
+      }
+    }
+
+    // Collect text lines
+    for (let i = textStart; i < lines.length; i++) {
+      cue.textLines.push(lines[i]);
+    }
+
+    // Apply rules to text
+    const originalText = cue.textLines.join('\n');
+    const cleanedText = applyToText(originalText);
+    cue.originalText = originalText;
+    cue.cleanedText = cleanedText;
+    cue.hasChanges = originalText !== cleanedText;
+
+    cues.push(cue);
+  }
+
+  // Rebuild SRT with CRLF
+  const rebuilt = cues
+    .map((c) => {
+      const text = c.cleanedText.replace(/\n/g, '\r\n');
+      return `${c.index}\r\n${c.timespan}\r\n${text}`;
+    })
+    .join('\r\n\r\n');
+
+  return {
+    cleanedSrt: rebuilt,
+    cues,
+    totalCues: cues.length,
+    changedCues: cues.filter((c) => c.hasChanges).length,
+    changes,
+  };
+}
+
+function buildCorrectionReport(job, ruleResults) {
+  const sections = [
     '# 字幕初稿校閱報告',
     '',
     `- 任務 ID：${job.config.jobId}`,
@@ -356,6 +2840,68 @@ function buildCorrectionReport(job) {
     '',
     job.config.requirements || '未填寫額外需求。',
     '',
+  ];
+
+  if (ruleResults && ruleResults.totalCues > 0) {
+    sections.push('## 規則套用結果', '');
+    sections.push(
+      `- 總字幕段落數：${ruleResults.totalCues}`,
+      `- 有修改的段落：${ruleResults.changedCues}`,
+      `- 未修改的段落：${ruleResults.totalCues - ruleResults.changedCues}`,
+      ''
+    );
+
+    // Group changes by type
+    const changeTypes = {};
+    if (ruleResults.changes) {
+      for (const change of ruleResults.changes) {
+        const key = change.type;
+        if (!changeTypes[key]) changeTypes[key] = [];
+        changeTypes[key].push(change);
+      }
+    }
+
+    const typeLabels = {
+      remove_filler: '口語詞移除',
+      normalize_term: '專有名詞標準化',
+      custom_replace: '自訂替換',
+      literal_replace: '一般替換',
+      regex_replace: '正規表示式替換',
+      remove_punctuation: '標點符號移除',
+      space_cleanup: '空白清理',
+    };
+
+    for (const [type, items] of Object.entries(changeTypes)) {
+      const label = typeLabels[type] || type;
+      sections.push(`### ${label}（${items.length} 處）`, '');
+      const examples = items.slice(0, 10);
+      for (const item of examples) {
+        if (item.original !== undefined) {
+          sections.push(`- 「${item.original}」 → 「${item.cleaned}」`);
+        } else if (item.pattern) {
+          sections.push(`- 符合 ${item.pattern} 的內容已套用替換`);
+        }
+      }
+      if (items.length > 10) {
+        sections.push(`- ……還有 ${items.length - 10} 處（詳見下方完整清單）`);
+      }
+      sections.push('');
+    }
+
+    // Detail: changed cues
+    const changedCues = ruleResults.cues.filter((c) => c.hasChanges);
+    if (changedCues.length > 0) {
+      sections.push('## 修改段落詳細清單', '');
+      for (const cue of changedCues) {
+        sections.push(`### 段落 #${cue.index}`, '');
+        sections.push(`- **原始**：${cue.originalText.replace(/\r?\n/g, ' ')}`);
+        sections.push(`- **修改後**：${cue.cleanedText.replace(/\r?\n/g, ' ')}`);
+        sections.push('');
+      }
+    }
+  }
+
+  sections.push(
     '## 待人工確認',
     '',
     '- 專有名詞是否正確',
@@ -363,22 +2909,781 @@ function buildCorrectionReport(job) {
     '- 斷句、閱讀速度與字幕時間軸是否自然',
     '- 是否需要調整燒錄字幕的字體、大小、顏色與位置',
     '',
-  ].join('\n');
+  );
+
+  return sections.join('\n');
 }
 
 function getReviewSubtitlePath(job) {
+  const editedCandidates = [
+    path.join(job.jobRoot, 'review-output', 'reviewed.srt'),
+    path.join(job.jobRoot, 'review-output', 'trimmed.srt'),
+  ].filter((candidate) => fs.existsSync(candidate))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  const candidates = [
+    ...editedCandidates,
+    path.join(job.jobRoot, 'working', 'rule-cleaned.srt'),
+    path.join(job.jobRoot, 'working', 'draft.srt'),
+    job.config.files.existingSrt ? path.join(job.jobRoot, 'input', job.config.files.existingSrt) : null,
+  ];
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || null;
+}
+
+function getBaseSubtitlePath(job) {
   const candidates = [
     path.join(job.jobRoot, 'review-output', 'reviewed.srt'),
     path.join(job.jobRoot, 'working', 'rule-cleaned.srt'),
     path.join(job.jobRoot, 'working', 'draft.srt'),
+    job.config.files.existingSrt ? path.join(job.jobRoot, 'input', job.config.files.existingSrt) : null,
   ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || null;
 }
 
-function getVideoPath(job) {
+function formatVttTime(seconds) {
+  const totalMs = Math.max(0, Math.round(Number(seconds || 0) * 1000));
+  const ms = totalMs % 1000;
+  const totalSeconds = Math.floor(totalMs / 1000);
+  const s = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const m = totalMinutes % 60;
+  const h = Math.floor(totalMinutes / 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+}
+
+function buildVttFromSrt(srtContent) {
+  const cues = parseSrtCues(srtContent);
+  const body = cues.map((cue) => [
+    `${formatVttTime(cue.start)} --> ${formatVttTime(cue.end)}`,
+    cue.text,
+  ].join('\n')).join('\n\n');
+  return `WEBVTT\n\n${body}${body ? '\n' : ''}`;
+}
+
+function applyRulesToReviewSubtitle(job, subtitleText, ruleText, ruleFileName = 'review-rule.txt') {
+  const rules = parseRules(ruleText || '');
+  const forceTraditional = rules.forceTraditional ?? job.config.language === 'zh-TW';
+  const ruleResults = applyRulesToSrt(subtitleText, rules, { forceTraditional });
+  const reviewOutputDir = path.join(job.jobRoot, 'review-output');
+  fs.mkdirSync(reviewOutputDir, { recursive: true });
+  const subtitlePath = path.join(reviewOutputDir, 'reviewed.srt');
+  const rulePath = path.join(reviewOutputDir, 'secondary-rule.txt');
+  const reportPath = path.join(reviewOutputDir, 'secondary-correction-report.md');
+  fs.writeFileSync(subtitlePath, ruleResults.cleanedSrt.replace(/\r?\n/g, '\r\n'), 'utf8');
+  fs.writeFileSync(rulePath, ruleText || '', 'utf8');
+  fs.writeFileSync(reportPath, buildCorrectionReport(job, ruleResults), 'utf8');
+  updateJob(job, {
+    status: 'completed',
+    stage: 'ready-review',
+    progress: 100,
+    message: `二次規則套用完成（${ruleResults.changedCues}/${ruleResults.totalCues} 段落有修改）`,
+    files: {
+      ...(job.status.files || {}),
+      reviewedSrt: subtitlePath,
+      secondaryRule: rulePath,
+      secondaryReport: reportPath,
+    },
+  }, `套用校閱規則檔：${displayFileName(ruleFileName)}`);
+  return { ruleResults, subtitlePath, rulePath, reportPath };
+}
+
+function deleteJob(job) {
+  const jobsDir = path.resolve(getJobsDir());
+  const jobRoot = path.resolve(job.jobRoot);
+  if (jobRoot === jobsDir || !jobRoot.startsWith(`${jobsDir}${path.sep}`)) {
+    throw new Error('Refusing to delete a path outside the jobs directory.');
+  }
+  const jobId = job.config.jobId;
+  cancelJob(jobId);
+  cancelTrim(jobId);
+  cancelBurn(jobId);
+  runningJobs.delete(jobId);
+  runningTrims.delete(jobId);
+  runningBurns.delete(jobId);
+  for (const key of [...runningWaveforms.keys()]) {
+    if (key.startsWith(`${jobId}:`)) runningWaveforms.delete(key);
+  }
+  for (const key of [...runningThumbnails.keys()]) {
+    if (key === jobId) runningThumbnails.delete(key);
+  }
+  fs.rmSync(jobRoot, { recursive: true, force: true });
+  jobsListCache = null;
+  return { ok: true, deleted: true, jobId };
+}
+
+function getOriginalVideoPath(job) {
   if (!job.config.files.video) return null;
   const videoPath = path.join(job.jobRoot, 'input', job.config.files.video);
   return fs.existsSync(videoPath) ? videoPath : null;
+}
+
+function getEffectiveVideoPath(job) {
+  return resolveEffectiveMediaPath(job.jobRoot, getOriginalVideoPath(job));
+}
+
+function readTrimStatus(job) {
+  const statusPath = getEditPaths(job.jobRoot).trimStatus;
+  if (!fs.existsSync(statusPath)) return { status: 'idle', stage: 'trim-planned', progress: 0, message: '尚未套用修剪' };
+  try {
+    return readJson(statusPath);
+  } catch {
+    return { status: 'idle', stage: 'trim-planned', progress: 0, message: '修剪狀態需要重新建立' };
+  }
+}
+
+function updateTrimStatus(job, patch) {
+  const status = { ...readTrimStatus(job), ...patch, jobId: job.config.jobId, updatedAt: new Date().toISOString() };
+  const statusPath = getEditPaths(job.jobRoot).trimStatus;
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  writeJson(statusPath, status);
+  return status;
+}
+
+function invalidateMediaCaches(job) {
+  const workingDir = path.join(job.jobRoot, 'working');
+  if (!fs.existsSync(workingDir)) return;
+  for (const name of fs.readdirSync(workingDir)) {
+    if (/^waveform(?:-original)?-\d+\.json$/i.test(name) || name === 'home-thumbnail.jpg') {
+      fs.rmSync(path.join(workingDir, name), { force: true });
+    }
+  }
+}
+
+async function saveEditPlan(job, value) {
+  const original = getOriginalVideoPath(job);
+  if (!original) throw new Error('找不到原始影片');
+  const sourceDuration = await probeDurationSeconds(original);
+  const plan = normalizeEditPlan(value, sourceDuration);
+  const planPath = getEditPaths(job.jobRoot).plan;
+  fs.mkdirSync(path.dirname(planPath), { recursive: true });
+  writeJson(planPath, plan);
+  updateTrimStatus(job, { status: 'idle', stage: 'trim-planned', progress: 0, message: '修剪區間已儲存' });
+  return plan;
+}
+
+function assertTrimAvailable(jobId) {
+  if (runningJobs.has(jobId)) throw Object.assign(new Error('字幕轉錄進行中，無法同時修剪影片'), { statusCode: 409 });
+  if (runningBurns.has(jobId)) throw Object.assign(new Error('影片輸出進行中，無法同時修剪影片'), { statusCode: 409 });
+  if (runningTrims.has(jobId)) throw Object.assign(new Error('影片修剪已在進行中'), { statusCode: 409 });
+}
+
+function startTrim(jobId) {
+  const job = loadJob(jobId);
+  if (!job) return { error: '找不到任務', statusCode: 404 };
+  try {
+    assertTrimAvailable(jobId);
+  } catch (error) {
+    return { error: error.message, statusCode: error.statusCode || 409 };
+  }
+  const plan = readEditPlan(job.jobRoot);
+  if (!plan) return { error: '請先設定修剪起點與終點', statusCode: 400 };
+  const controller = new AbortController();
+  const previousJobState = { status: job.status.status, stage: job.status.stage, progress: job.status.progress, message: job.status.message };
+  const promise = applyTrim(job, plan, controller.signal, previousJobState)
+    .catch((error) => {
+      const cancelled = controller.signal.aborted;
+      const paths = getEditPaths(job.jobRoot);
+      fs.rmSync(paths.partial, { force: true });
+      updateTrimStatus(job, {
+        status: cancelled ? 'cancelled' : 'failed',
+        stage: cancelled ? 'trim-cancelled' : 'trim-failed',
+        message: cancelled ? '影片修剪已取消' : `影片修剪失敗：${error.message}`,
+      });
+      updateJob(job, cancelled ? {
+        ...previousJobState,
+        message: '影片修剪已取消，原始影片保持不變',
+      } : {
+        status: 'failed',
+        stage: 'trim-failed',
+        message: `影片修剪失敗：${error.message}`,
+      }, cancelled ? '使用者取消影片修剪' : `影片修剪失敗：${error.message}`);
+    })
+    .finally(() => runningTrims.delete(jobId));
+  runningTrims.set(jobId, { controller, promise });
+  return { started: true };
+}
+
+function cancelTrim(jobId) {
+  const active = runningTrims.get(jobId);
+  if (!active) return false;
+  active.controller.abort();
+  return true;
+}
+
+async function applyTrim(job, rawPlan, signal, previousJobState) {
+  const original = getOriginalVideoPath(job);
+  if (!original) throw new Error('找不到原始影片');
+  const sourceDuration = await probeDurationSeconds(original);
+  const plan = normalizeEditPlan(rawPlan, sourceDuration);
+  const paths = getEditPaths(job.jobRoot);
+  fs.mkdirSync(path.dirname(paths.partial), { recursive: true });
+  fs.rmSync(paths.partial, { force: true });
+  const estimatedBytes = Math.ceil(fs.statSync(original).size * (plan.outputDuration / plan.sourceDuration)) + 1024 * 1024 * 1024;
+  if (typeof fs.statfsSync === 'function') {
+    const stats = fs.statfsSync(path.dirname(paths.partial));
+    const available = Number(stats.bavail) * Number(stats.bsize);
+    if (Number.isFinite(available) && available < estimatedBytes) throw new Error('磁碟空間不足，請至少保留預估輸出容量加 1 GB');
+  }
+  updateTrimStatus(job, { status: 'running', stage: 'trim-preparing', progress: 1, message: '正在準備非破壞式影片修剪', plan });
+  updateJob(job, { status: 'running', stage: 'trimming', progress: 1, message: '正在修剪影片' }, `修剪區間 ${plan.in}–${plan.out} 秒`);
+
+  const encoders = plan.strategy === 'fast'
+    ? ['copy']
+    : (process.platform === 'darwin' ? ['h264_videotoolbox', 'libx264'] : ['libx264']);
+  let lastError = null;
+  for (const encoder of encoders) {
+    fs.rmSync(paths.partial, { force: true });
+    try {
+      await runTrimProcess(job, original, paths.partial, plan, encoder, signal);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (signal.aborted || encoder === encoders.at(-1)) throw error;
+      updateTrimStatus(job, { message: '硬體編碼不可用，改用相容編碼器重試' });
+    }
+  }
+  if (lastError) throw lastError;
+  const info = await probeMediaInfo(paths.partial);
+  if (!info.hasVideo || !Number.isFinite(info.duration) || Math.abs(info.duration - plan.outputDuration) > Math.max(0.75, plan.outputDuration * 0.03)) {
+    throw new Error(`修剪成品驗證失敗（預期 ${plan.outputDuration.toFixed(2)} 秒，實際 ${Number(info.duration || 0).toFixed(2)} 秒）`);
+  }
+  fs.rmSync(paths.trimmed, { force: true });
+  fs.renameSync(paths.partial, paths.trimmed);
+
+  const appliedPlan = { ...plan, appliedAt: new Date().toISOString(), effectiveFile: 'working/media-trimmed.mp4' };
+  writeJson(paths.plan, appliedPlan);
+  const baseSubtitle = getBaseSubtitlePath(job);
+  let trimmedSubtitle = null;
+  let subtitleResult = null;
+  if (baseSubtitle) {
+    subtitleResult = trimSrtToRange(fs.readFileSync(baseSubtitle, 'utf8'), plan.in, plan.out);
+    if (subtitleResult.cues.length) {
+      trimmedSubtitle = path.join(job.jobRoot, 'review-output', 'trimmed.srt');
+      fs.mkdirSync(path.dirname(trimmedSubtitle), { recursive: true });
+      fs.writeFileSync(trimmedSubtitle, subtitleResult.subtitle, 'utf8');
+      writeJson(path.join(job.jobRoot, 'review-output', 'trim-report.json'), {
+        sourceSubtitle: relativeToApp(baseSubtitle),
+        sourceCount: subtitleResult.sourceCount,
+        keptCount: subtitleResult.cues.length,
+        removedCount: subtitleResult.removedCount,
+        boundaryCount: subtitleResult.boundaryCount,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+  invalidateMediaCaches(job);
+  const completedStatus = updateTrimStatus(job, {
+    status: 'completed',
+    stage: 'trim-completed',
+    progress: 100,
+    message: '影片修剪完成，可進入字幕校對',
+    plan: appliedPlan,
+    mediaInfo: info,
+    subtitle: subtitleResult ? {
+      keptCount: subtitleResult.cues.length,
+      removedCount: subtitleResult.removedCount,
+      boundaryCount: subtitleResult.boundaryCount,
+    } : null,
+  });
+  updateJob(job, {
+    status: previousJobState.status === 'created' ? 'created' : 'completed',
+    stage: previousJobState.status === 'created' ? 'trim-completed' : 'ready-review',
+    progress: previousJobState.status === 'created' ? 0 : 100,
+    message: previousJobState.status === 'created' ? '影片修剪完成，可開始字幕生成' : '影片修剪與字幕時間重算完成',
+    files: {
+      ...(job.status.files || {}),
+      effectiveVideo: paths.trimmed,
+      ...(trimmedSubtitle ? { trimmedSrt: trimmedSubtitle } : {}),
+    },
+  }, '影片修剪完成並切換有效影片');
+  return completedStatus;
+}
+
+function runTrimProcess(job, input, output, plan, encoder, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(createJobCancelledError());
+    const duration = String(plan.outputDuration);
+    const args = encoder === 'copy'
+      ? ['-y', '-ss', String(plan.in), '-i', input, '-t', duration, '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output]
+      : ['-y', '-ss', String(plan.in), '-i', input, '-t', duration, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', encoder, ...(encoder === 'h264_videotoolbox' ? ['-q:v', '65'] : ['-preset', 'veryfast', '-crf', '20']), '-c:a', 'aac', '-b:a', '192k', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
+    const child = spawn(toolPaths.ffmpeg, args, { shell: false, windowsHide: true });
+    let stderr = '';
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abortHandler);
+      callback();
+    };
+    const abortHandler = () => {
+      child.kill('SIGTERM');
+      finish(() => reject(createJobCancelledError()));
+    };
+    signal.addEventListener('abort', abortHandler, { once: true });
+    child.stdout.on('data', (chunk) => {
+      const timeMs = parseFfmpegProgressMs(chunk.toString('utf8'));
+      if (timeMs < 0) return;
+      const progress = Math.max(2, Math.min(96, Math.round((timeMs / 1000000 / plan.outputDuration) * 94 + 2)));
+      updateTrimStatus(job, { status: 'running', stage: 'trimming', progress, message: encoder === 'copy' ? '正在快速修剪影片' : '正在精準修剪影片' });
+      updateJob(job, { status: 'running', stage: 'trimming', progress, message: '正在修剪影片' });
+    });
+    child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk.toString('utf8')}`.slice(-5000); });
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('close', (code) => {
+      if (signal.aborted) finish(() => reject(createJobCancelledError()));
+      else if (code === 0 && fs.existsSync(output)) finish(resolve);
+      else finish(() => reject(new Error(`FFmpeg 修剪失敗（${encoder}, exit ${code}）：${sanitizeLog(stderr).slice(-400)}`)));
+    });
+  });
+}
+
+function restoreOriginalMedia(job) {
+  if (runningTrims.has(job.config.jobId)) throw Object.assign(new Error('影片修剪進行中，請先取消'), { statusCode: 409 });
+  const paths = getEditPaths(job.jobRoot);
+  for (const filePath of [paths.trimmed, paths.partial, paths.plan, paths.trimStatus, path.join(job.jobRoot, 'review-output', 'trimmed.srt'), path.join(job.jobRoot, 'review-output', 'trim-report.json')]) {
+    fs.rmSync(filePath, { force: true });
+  }
+  invalidateMediaCaches(job);
+  updateJob(job, {
+    status: job.status.status === 'running' ? 'created' : job.status.status,
+    stage: job.status.status === 'completed' ? 'ready-review' : 'created',
+    message: '已還原原始影片',
+    files: Object.fromEntries(Object.entries(job.status.files || {}).filter(([key]) => !['effectiveVideo', 'trimmedSrt'].includes(key))),
+  }, '停用修剪並還原原始影片');
+  return { ok: true, message: '已還原原始影片' };
+}
+
+function getWaveform(job, requestedPoints = 640, source = 'effective') {
+  const points = Math.max(160, Math.min(1200, Math.floor(Number(requestedPoints) || 640)));
+  const useOriginal = source === 'original';
+  const videoPath = useOriginal ? getOriginalVideoPath(job) : getEffectiveVideoPath(job);
+  if (!videoPath) return Promise.reject(new Error('找不到任務影片'));
+  if (!toolPaths.ffmpeg) return Promise.reject(new Error('找不到內建 FFmpeg'));
+  const cachePath = path.join(job.jobRoot, 'working', `waveform${useOriginal ? '-original' : ''}-${points}.json`);
+  if (fs.existsSync(cachePath)) {
+    try {
+      const cached = readJson(cachePath);
+      if (Array.isArray(cached.peaks) && cached.peaks.length === points) return Promise.resolve(cached);
+    } catch {}
+  }
+  const key = `${job.config.jobId}:${source}:${points}`;
+  if (runningWaveforms.has(key)) return runningWaveforms.get(key);
+  const promise = new Promise((resolve, reject) => {
+    const chunks = [];
+    let stderr = '';
+    const sampleRate = 800;
+    const child = spawn(toolPaths.ffmpeg, [
+      '-v', 'error', '-i', videoPath, '-map', '0:a:0', '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 's16le', 'pipe:1',
+    ], { shell: false, windowsHide: true });
+    child.stdout.on('data', (chunk) => chunks.push(chunk));
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`無法解析影片音軌：${sanitizeLog(stderr).slice(-180) || `FFmpeg exit ${code}`}`));
+        return;
+      }
+      const pcm = Buffer.concat(chunks);
+      const sampleCount = Math.floor(pcm.length / 2);
+      if (!sampleCount) {
+        reject(new Error('影片沒有可用的音訊取樣'));
+        return;
+      }
+      const peaks = new Array(points).fill(0);
+      for (let bucket = 0; bucket < points; bucket += 1) {
+        const start = Math.floor((bucket * sampleCount) / points);
+        const end = Math.max(start + 1, Math.floor(((bucket + 1) * sampleCount) / points));
+        let peak = 0;
+        for (let index = start; index < end; index += 1) {
+          peak = Math.max(peak, Math.abs(pcm.readInt16LE(index * 2)) / 32768);
+        }
+        peaks[bucket] = peak;
+      }
+      const high = Math.max(...peaks, 0.01);
+      const normalized = peaks.map((value) => Number(Math.min(1, Math.pow(value / high, 0.68)).toFixed(4)));
+      const result = { peaks: normalized, duration: sampleCount / sampleRate, points, source: 'ffmpeg-pcm' };
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      writeJson(cachePath, result);
+      resolve(result);
+    });
+  }).finally(() => runningWaveforms.delete(key));
+  runningWaveforms.set(key, promise);
+  return promise;
+}
+
+function getProjectThumbnail(job) {
+  const videoPath = getEffectiveVideoPath(job);
+  if (!videoPath) return Promise.reject(new Error('找不到任務影片'));
+  const outputPath = path.join(job.jobRoot, 'working', 'home-thumbnail.jpg');
+  if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return Promise.resolve(outputPath);
+  const key = job.config.jobId;
+  if (runningThumbnails.has(key)) return runningThumbnails.get(key);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const promise = new Promise((resolve, reject) => {
+    let stderr = '';
+    const child = spawn(toolPaths.ffmpeg, [
+      '-v', 'error', '-ss', '1', '-i', videoPath, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '4', '-y', outputPath,
+    ], { shell: false, windowsHide: true });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) resolve(outputPath);
+      else reject(new Error(`無法產生專案縮圖：${sanitizeLog(stderr).slice(-160) || `FFmpeg exit ${code}`}`));
+    });
+  }).finally(() => runningThumbnails.delete(key));
+  runningThumbnails.set(key, promise);
+  return promise;
+}
+
+function startBurn(jobId, options) {
+  if (runningBurns.has(jobId)) return { started: false, alreadyRunning: true };
+  if (runningTrims.has(jobId)) return { started: false, error: '影片修剪進行中，完成後才能輸出' };
+  const job = loadJob(jobId);
+  if (!job) return { started: false, error: '找不到任務' };
+  const controller = new AbortController();
+  const promise = burnSubtitle(job, options, controller.signal)
+    .catch((error) => {
+      const freshJob = loadJob(jobId) || job;
+      if (controller.signal.aborted) {
+        updateJob(freshJob, {
+          status: 'cancelled',
+          stage: 'burn-cancelled',
+          message: '字幕輸出已取消',
+        }, '使用者取消字幕輸出');
+        return;
+      }
+      updateJob(freshJob, {
+        status: 'failed',
+        stage: 'burn-failed',
+        progress: 100,
+        message: `字幕輸出失敗：${error.message}`,
+      }, error.message);
+    })
+    .finally(() => runningBurns.delete(jobId));
+  runningBurns.set(jobId, { controller, promise });
+  return { started: true };
+}
+
+function cancelBurn(jobId) {
+  const active = runningBurns.get(jobId);
+  if (!active) return false;
+  active.controller.abort();
+  return true;
+}
+
+async function burnSubtitle(job, options = {}, signal) {
+  const videoPath = getEffectiveVideoPath(job);
+  if (!videoPath) throw new Error('找不到任務影片，無法輸出');
+
+  const subtitlePath = getReviewSubtitlePath(job);
+  if (!subtitlePath) throw new Error('找不到可輸出的字幕，請先完成字幕生成或匯入 SRT');
+
+  const outputDir = path.join(job.jobRoot, 'output');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const mode = ['hardsub', 'softsub', 'both'].includes(options.mode) ? options.mode : 'hardsub';
+  const outputFormat = ['mp4', 'mkv'].includes(options.outputFormat) ? options.outputFormat : 'mp4';
+  const quality = ['h264-fast', 'h264-medium', 'original'].includes(options.quality) ? options.quality : 'h264-medium';
+  const safeBaseName = path.parse(displayFileName(job.config.files.video || job.config.jobId)).name.replace(/[^\w\u4e00-\u9fff-]+/g, '_') || job.config.jobId;
+  const duration = await probeDurationSeconds(videoPath);
+  const settings = loadBurnSettings(job);
+  const assPath = path.join(outputDir, 'subtitle.ass');
+  fs.writeFileSync(assPath, buildAssFromSrt(fs.readFileSync(subtitlePath, 'utf8'), settings), 'utf8');
+
+  updateJob(job, {
+    status: 'running',
+    stage: 'export-start',
+    progress: 6,
+    message: '準備輸出字幕與影片',
+  }, `輸出模式=${mode} 格式=${outputFormat}`);
+
+  const outputs = {};
+  if (mode === 'softsub' || mode === 'both') {
+    const softExt = outputFormat === 'mp4' ? 'mp4' : 'mkv';
+    const softPath = path.join(outputDir, `${safeBaseName}_softsub.${softExt}`);
+    const codecArgs = softExt === 'mp4'
+      ? ['-c', 'copy', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=chi']
+      : ['-c', 'copy', '-c:s', 'srt'];
+    const args = ['-y', '-i', videoPath, '-i', subtitlePath, ...codecArgs, '-progress', 'pipe:1', '-nostats', softPath];
+    await runFfmpegWithProgress(job, args, {
+      duration,
+      stage: 'softsub-export',
+      start: 10,
+      end: mode === 'both' ? 45 : 94,
+      message: '正在輸出軟字幕影片',
+      signal,
+    });
+    outputs.softsubVideo = softPath;
+  }
+
+  if (mode === 'hardsub' || mode === 'both') {
+    const hardPath = path.join(outputDir, `${safeBaseName}_hardsub.mp4`);
+    const videoArgs = quality === 'h264-fast'
+      ? ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26']
+      : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23'];
+    const args = [
+      '-y',
+      '-i', videoPath,
+      '-vf', 'ass=subtitle.ass',
+      ...videoArgs,
+      '-c:a', 'copy',
+      '-movflags', '+faststart',
+      '-progress', 'pipe:1',
+      '-nostats',
+      hardPath,
+    ];
+    await runFfmpegWithProgress(job, args, {
+      duration,
+      stage: 'hardsub-burn',
+      start: mode === 'both' ? 48 : 10,
+      end: 96,
+      message: '正在硬燒錄字幕到影片',
+      cwd: outputDir,
+      signal,
+    });
+    outputs.hardsubVideo = hardPath;
+  }
+
+  const subtitleCopy = path.join(outputDir, `${safeBaseName}_reviewed.srt`);
+  fs.copyFileSync(subtitlePath, subtitleCopy);
+  outputs.subtitle = subtitleCopy;
+  outputs.assSubtitle = assPath;
+
+  const manifestPath = path.join(outputDir, 'export-manifest.json');
+  writeJson(manifestPath, {
+    jobId: job.config.jobId,
+    exportedAt: new Date().toISOString(),
+    mode,
+    outputFormat,
+    quality,
+    sourceVideo: relativeToApp(videoPath),
+    sourceSubtitle: relativeToApp(subtitlePath),
+    files: Object.fromEntries(Object.entries(outputs).map(([key, value]) => [key, relativeToApp(value)])),
+  });
+
+  updateJob(job, {
+    status: 'completed',
+    stage: 'export-completed',
+    progress: 100,
+    message: '輸出完成，可開啟 output 資料夾檢查檔案',
+    files: {
+      ...(job.status.files || {}),
+      outputs,
+      exportManifest: manifestPath,
+      outputFolder: outputDir,
+    },
+  }, '字幕輸出完成');
+
+  return outputs;
+}
+
+function loadBurnSettings(job) {
+  const settingsPath = path.join(job.jobRoot, 'review-output', 'burn-settings.json');
+  if (fs.existsSync(settingsPath)) {
+    try {
+      return normalizeBurnSettings(readJson(settingsPath));
+    } catch {}
+  }
+  return normalizeBurnSettings({});
+}
+
+function runFfmpegWithProgress(job, args, { duration, stage, start, end, message, signal, cwd }) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('輸出已取消'));
+      return;
+    }
+    let stderr = '';
+    let lastProgress = -1;
+    const child = spawn(toolPaths.ffmpeg, args, { shell: false, windowsHide: true, cwd });
+    const abortHandler = () => {
+      child.kill('SIGTERM');
+      reject(new Error('輸出已取消'));
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      const timeMs = parseFfmpegProgressMs(text);
+      if (duration > 0 && timeMs >= 0) {
+        const percent = Math.min(end, Math.max(start, start + (timeMs / 1000000 / duration) * (end - start)));
+        const rounded = Math.floor(percent);
+        if (rounded >= lastProgress + 4 || rounded >= end) {
+          lastProgress = rounded;
+          updateJob(job, { stage, progress: rounded, message }, `${message} ${rounded}%`);
+        }
+      }
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+      const clean = sanitizeLog(chunk.toString('utf8'));
+      if (clean && clean.length > 12) updateJob(job, { stage, message }, clean);
+    });
+    child.on('error', (error) => {
+      signal?.removeEventListener('abort', abortHandler);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      signal?.removeEventListener('abort', abortHandler);
+      if (signal?.aborted) {
+        reject(new Error('輸出已取消'));
+      } else if (code === 0) {
+        updateJob(job, { stage, progress: end, message }, `${message} ${end}%`);
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg 輸出失敗（exit ${code}）：${sanitizeLog(stderr).slice(-300)}`));
+      }
+    });
+  });
+}
+
+function parseFfmpegProgressMs(text) {
+  const matches = [...text.matchAll(/out_time_ms=(\d+)/g)];
+  if (!matches.length) return -1;
+  return Number(matches.at(-1)[1]);
+}
+
+function probeDurationSeconds(videoPath) {
+  return new Promise((resolve) => {
+    const ffprobe = toolPaths.ffprobe;
+    const child = spawn(ffprobe, [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath,
+    ], { shell: false, windowsHide: true });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => (stdout += chunk.toString('utf8')));
+    child.on('close', () => {
+      const seconds = Number.parseFloat(stdout.trim());
+      resolve(Number.isFinite(seconds) && seconds > 0 ? seconds : 0);
+    });
+    child.on('error', () => resolve(0));
+  });
+}
+
+function probeMediaInfo(videoPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(toolPaths.ffprobe, [
+      '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height', '-of', 'json', videoPath,
+    ], { shell: false, windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`FFprobe 驗證失敗：${sanitizeLog(stderr).slice(-250)}`));
+      try {
+        const data = JSON.parse(stdout);
+        const video = data.streams?.find((stream) => stream.codec_type === 'video');
+        resolve({
+          duration: Number(data.format?.duration || 0),
+          hasVideo: Boolean(video),
+          hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === 'audio')),
+          width: Number(video?.width || 0),
+          height: Number(video?.height || 0),
+        });
+      } catch (error) {
+        reject(new Error(`FFprobe 回傳資料無法解析：${error.message}`));
+      }
+    });
+  });
+}
+
+function buildAssFromSrt(srtContent, settings) {
+  const cues = parseSrtCues(srtContent);
+  const style = buildAssStyleLine(settings);
+  const events = cues.map((cue) => {
+    const text = cue.text
+      .replace(/\r?\n/g, '\\N')
+      .replace(/[{}]/g, '')
+      .replace(/,/g, '，');
+    return `Dialogue: 0,${formatAssTime(cue.start)},${formatAssTime(cue.end)},Default,,0,0,0,,${text}`;
+  });
+  return [
+    '[Script Info]',
+    'Title: Offline Subtitle Factory Export',
+    'ScriptType: v4.00+',
+    'WrapStyle: 0',
+    'ScaledBorderAndShadow: yes',
+    `PlayResX: ${ASS_PLAY_RES_X}`,
+    `PlayResY: ${ASS_PLAY_RES_Y}`,
+    '',
+    '[V4+ Styles]',
+    'Format: Name, FontName, FontSize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    style,
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+    ...events,
+    '',
+  ].join('\n');
+}
+
+function buildAssStyleLine(settings) {
+  return [
+    'Style: Default',
+    settings.fontFamily,
+    settings.fontSize,
+    hexToAssColor(settings.fontColor),
+    '&H000000FF',
+    hexToAssColor(settings.outlineColor),
+    '&H80000000',
+    settings.bold ? '-1' : '0',
+    '0',
+    '0',
+    '0',
+    '100',
+    '100',
+    '0',
+    '0',
+    '1',
+    settings.outlineWidth,
+    '0',
+    settings.alignment,
+    '40',
+    '40',
+    settings.marginV,
+    '1',
+  ].join(',');
+}
+
+function parseSrtCues(text) {
+  return String(text || '')
+    .replace(/\r/g, '')
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+      const timeIndex = lines.findIndex((line) => line.includes('-->'));
+      if (timeIndex < 0) return null;
+      const [startRaw, endRaw] = lines[timeIndex].split('-->').map((part) => part.trim());
+      const cueText = lines.slice(timeIndex + 1).join('\n').trim();
+      if (!cueText) return null;
+      return {
+        start: parseSrtTime(startRaw),
+        end: parseSrtTime(endRaw),
+        text: cueText,
+      };
+    })
+    .filter((cue) => cue && cue.end > cue.start);
+}
+
+function parseSrtTime(value) {
+  const match = String(value || '').match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})/);
+  if (!match) return 0;
+  const [, hh, mm, ss, ms] = match;
+  return Number(hh) * 3600 + Number(mm) * 60 + Number(ss) + Number(ms.padEnd(3, '0')) / 1000;
+}
+
+function formatAssTime(seconds) {
+  const totalCentiseconds = Math.max(0, Math.round(seconds * 100));
+  const cs = totalCentiseconds % 100;
+  const totalSeconds = Math.floor(totalCentiseconds / 100);
+  const s = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const m = totalMinutes % 60;
+  const h = Math.floor(totalMinutes / 60);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
 function normalizeBurnSettings(settings) {
@@ -427,7 +3732,19 @@ function clampNumber(value, min, max, fallback) {
 }
 
 function relativeToApp(filePath) {
-  return path.relative(appDir, filePath).replace(/\\/g, '/');
+  const absolutePath = path.resolve(filePath);
+  const relativePath = path.relative(appDir, absolutePath);
+  if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+    return relativePath.replace(/\\/g, '/');
+  }
+  return absolutePath;
+}
+
+function jobMediaUrl(job, filePath) {
+  const relative = path.relative(job.jobRoot, filePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('影片路徑不在任務資料夾內');
+  const encoded = relative.split(path.sep).map(encodeURIComponent).join('/');
+  return `/job-media/${encodeURIComponent(job.config.jobId)}/${encoded}`;
 }
 
 function resolveJobFolder(job, target) {
@@ -498,6 +3815,11 @@ function serveStatic(req, res) {
     serveFile(req, res, path.join(publicDir, 'review.html'));
     return;
   }
+  const trimMatch = url.pathname.match(/^\/trim\/([^/]+)$/);
+  if (trimMatch) {
+    serveFile(req, res, path.join(publicDir, 'trim.html'));
+    return;
+  }
   const mediaMatch = url.pathname.match(/^\/job-media\/([^/]+)\/(.+)$/);
   if (mediaMatch) {
     const job = loadJob(mediaMatch[1]);
@@ -519,15 +3841,359 @@ function serveStatic(req, res) {
 
 async function handleApi(req, res) {
   const url = new URL(req.url, 'http://localhost');
+  console.log('[api]', req.method, url.pathname);
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    sendJson(res, 200, await healthCheck());
+    sendJson(res, 200, await healthCheck(url.searchParams.get('refresh') === '1'));
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
+    // Lightweight bootstrap check — no GPU detection (avoids torch import cost)
+    const tools = await getBasicToolsStatus(url.searchParams.get('refresh') === '1');
+    const { node: hasNode, ffmpeg: hasFfmpeg, whisper: hasWhisper, whisperModels, breezeRuntime, breezeModel, asrEngine } = tools;
+
+    const missing = [];
+    if (!hasNode) missing.push('Node.js');
+    if (!hasFfmpeg) missing.push('FFmpeg');
+    if (!hasWhisper) missing.push('Whisper');
+
+    const ready = missing.length === 0;
+    const canProcess = hasWhisper && hasFfmpeg;
+
+    let installGuide = null;
+    if (!ready) {
+      installGuide = {
+        missingTools: missing,
+        steps: ['• 正式安裝包已內建所有必要元件；若檔案缺失或損壞，請重新安裝 APP。'],
+        repairAction: 'reinstall-app',
+      };
+    }
+
+    sendJson(res, 200, {
+      ready,
+      canProcessJobs: canProcess,
+      asrEngine,
+      whisperModels,
+      breezeRuntime,
+      breezeModel,
+      missingTools: missing,
+      installGuide,
+      localToolsDir: toolsDir,
+      toolsInfo: {
+        selectedToolsDir: toolsInfo.toolsDir,
+        candidates: toolsInfo.candidates,
+        manifest: toolsInfo.manifest,
+        manifestPath: toolPaths.manifest,
+      },
+      paths: toolPaths,
+    });
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/whisper-models') {
+    sendJson(res, 200, {
+      ok: true,
+      models: getWhisperModelStatusPayload(),
+      cacheDirectory: toolPaths.whisperModelCache,
+      instructions: '選擇 Base／Small 後可由 App 自動下載；若下載受限，請從模型的官方 URL 下載同名檔案後放入上述快取資料夾，再重新檢查。',
+    });
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/breeze-runtime') {
+    sendJson(res, 200, { ok: true, runtime: await getBreezeRuntimeStatusPayload({ force: url.searchParams.get('refresh') === '1' }), cacheDirectory: breezeRuntimeManager.getBreezeRuntimeDirectory() });
+    return;
+  }
+  if (url.pathname === '/api/breeze-runtime/download' && ['POST', 'DELETE'].includes(req.method)) {
+    try {
+      if (req.method === 'POST') await startBreezeRuntimeInstall();
+      if (req.method === 'DELETE') cancelBreezeRuntimeInstall();
+      const runtime = await getBreezeRuntimeStatusPayload({ force: true });
+      sendJson(res, [BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(runtime.status) ? 202 : runtime.status === BREEZE_RUNTIME_STATUS.FAILED ? 422 : 200, { ok: runtime.status !== BREEZE_RUNTIME_STATUS.FAILED, runtime, cacheDirectory: breezeRuntimeManager.getBreezeRuntimeDirectory() });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: humanizeBreezeRuntimeError(error), details: error?.code || 'RUNTIME_ERROR' });
+    }
+    return;
+  }
+  if (req.method === 'DELETE' && url.pathname === '/api/breeze-runtime') {
+    try {
+      const current = await getBreezeRuntimeStatusPayload({ force: true });
+      if ([BREEZE_RUNTIME_STATUS.DOWNLOADING, BREEZE_RUNTIME_STATUS.VERIFYING, BREEZE_RUNTIME_STATUS.INSTALLING].includes(current.status)) throw new Error('請先取消進行中的 Breeze runtime 安裝');
+      const removed = await breezeRuntimeManager.remove();
+      breezeRuntimeInstallJob = null;
+      refreshBreezePythonPath();
+      sendJson(res, 200, { ok: true, runtime: removed, cacheDirectory: breezeRuntimeManager.getBreezeRuntimeDirectory() });
+    } catch (error) { sendJson(res, 409, { ok: false, error: humanizeBreezeRuntimeError(error) }); }
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/breeze-runtime/recheck') {
+    refreshBreezePythonPath();
+    const runtime = await getBreezeRuntimeStatusPayload({ force: true });
+    sendJson(res, 200, { ok: true, runtime, cacheDirectory: breezeRuntimeManager.getBreezeRuntimeDirectory() });
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/breeze-asr') {
+    const tools = await getBasicToolsStatus(url.searchParams.get('refresh') === '1');
+    const runtime = await getBreezeRuntimeStatusPayload({ force: false, includeExternal: false });
+    sendJson(res, 200, {
+      ok: true,
+      model: await getBreezeModelStatusPayload(Boolean(tools.breezeRuntime || runtime.ready)),
+      runtime,
+      cacheDirectory: toolPaths.breezeModelCache,
+      instructions: breezeRuntimeInstallGuide(),
+      runtimeInstallGuideDetails: breezeRuntimeInstallGuideDetails(),
+    });
+    return;
+  }
+  if (url.pathname === '/api/breeze-asr/download' && ['GET', 'POST', 'DELETE'].includes(req.method)) {
+    try {
+      if (req.method === 'POST') await startBreezeModelDownload();
+      if (req.method === 'DELETE') cancelBreezeModelDownload();
+      const tools = await getBasicToolsStatus();
+      const runtime = await getBreezeRuntimeStatusPayload({ includeExternal: false });
+      const model = await getBreezeModelStatusPayload(Boolean(tools.breezeRuntime || runtime.ready));
+      sendJson(res, model.status === 'failed' ? 422 : model.status === 'downloading' ? 202 : 200, {
+        ok: model.status !== 'failed',
+        model,
+        runtime,
+        cacheDirectory: toolPaths.breezeModelCache,
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  const whisperDownloadMatch = url.pathname.match(/^\/api\/whisper-models\/([^/]+)\/download$/);
+  if (whisperDownloadMatch && ['GET', 'POST', 'DELETE'].includes(req.method)) {
+    const modelName = decodeURIComponent(whisperDownloadMatch[1]).toLowerCase();
+    const definition = getWhisperModelDownloadDefinition(modelName);
+    if (!definition) {
+      sendJson(res, 400, { ok: false, error: `不支援的 Whisper 模型：${modelName}` });
+      return;
+    }
+    try {
+      if (req.method === 'POST') startWhisperModelDownload(modelName);
+      if (req.method === 'DELETE') cancelWhisperModelDownload(modelName);
+      const model = getWhisperModelStatusPayload()[definition.name];
+      sendJson(res, model.status === 'failed' ? 422 : model.status === 'downloading' ? 202 : 200, {
+        ok: model.status !== 'failed',
+        model,
+        cacheDirectory: toolPaths.whisperModelCache,
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/settings') {
+    sendJson(res, 200, {
+      ...appSettings,
+      settingsFile: settingsPath,
+      projectFolder: getJobsDir(),
+    });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/settings') {
+    try {
+      const payload = await readJsonBody(req);
+      if (payload.ai && Object.hasOwn(payload.ai, 'provider') && !isSupportedProvider(payload.ai.provider)) {
+        throw new Error(`不支援的 AI 供應商：${payload.ai.provider || ''}`);
+      }
+      if (payload.ai && Object.hasOwn(payload.ai, 'language')) canonicalizeLanguageTag(payload.ai.language);
+      sendJson(res, 200, {
+        ok: true,
+        settings: saveSettings(payload),
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/ai/settings') {
+    sendJson(res, 200, { ok: true, settings: publicAiSettings() });
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/ai/profile') {
+    const provider = url.searchParams.get('provider') || appSettings.ai.provider;
+    if (!isSupportedProvider(provider)) {
+      sendJson(res, 400, { ok: false, error: `不支援的 AI 供應商：${provider}` });
+      return;
+    }
+    sendJson(res, 200, { ok: true, provider, profile: appSettings.ai.profiles?.[provider] || {}, hasApiKey: Boolean(readAiApiKey(provider)), capabilities: PROVIDER_CAPABILITIES[provider] });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/ai/settings') {
+    try {
+      const payload = await readJsonBody(req);
+      if (!isSupportedProvider(payload.provider)) throw new Error(`不支援的 AI 供應商：${payload.provider || ''}`);
+      if (Object.hasOwn(payload, 'language')) canonicalizeLanguageTag(payload.language);
+      const nextAi = normalizeAiSettings(payload);
+      if (nextAi.enabled && (!nextAi.baseUrl || !nextAi.model)) throw new Error('啟用 AI 前必須填寫 Base URL 與模型名稱');
+      if (nextAi.enabled && nextAi.provider === 'azure' && !nextAi.deployment) throw new Error('啟用 Azure OpenAI 前必須填寫 Azure Deployment');
+      if (nextAi.baseUrl) new URL(nextAi.baseUrl);
+      const profiles = { ...(appSettings.ai.profiles || {}), ...(payload.profiles || {}) };
+      profiles[nextAi.provider] = {
+        baseUrl: nextAi.baseUrl, model: nextAi.model, deployment: nextAi.deployment,
+        apiVersion: nextAi.apiVersion, batchSize: nextAi.batchSize, timeoutSeconds: nextAi.timeoutSeconds,
+      };
+      nextAi.profiles = profiles;
+      appSettings = { ...appSettings, ai: nextAi };
+      writeJson(settingsPath, appSettings);
+      saveAiApiKey(payload.apiKey, nextAi.provider);
+      sendJson(res, 200, { ok: true, settings: publicAiSettings() });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'DELETE' && url.pathname === '/api/ai/key') {
+    const provider = url.searchParams.get('provider') || appSettings.ai.provider;
+    if (!isSupportedProvider(provider)) {
+      sendJson(res, 400, { ok: false, error: `不支援的 AI 供應商：${provider}` });
+      return;
+    }
+    clearAiApiKey(provider);
+    sendJson(res, 200, { ok: true, settings: publicAiSettings() });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/ai/runtime-key') {
+    try {
+      const payload = await readJsonBody(req);
+      if (!isSupportedProvider(payload.provider)) throw new Error(`不支援的 AI 供應商：${payload.provider || ''}`);
+      const provider = payload.provider;
+      const apiKey = String(payload.apiKey || '').trim();
+      if (apiKey) runtimeAiKeys[provider] = apiKey;
+      else delete runtimeAiKeys[provider];
+      sendJson(res, 200, { ok: true, hasApiKey: Boolean(runtimeAiKeys[provider]) });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/ai/local-services') {
+    sendJson(res, 200, { ok: true, services: await discoverLocalAiServices() });
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/ai/models') {
+    try {
+      const config = aiProviderConfig();
+      if (!config.baseUrl) throw new Error('請先儲存 API Base URL');
+      const models = await createProvider(config).listModels();
+      sendJson(res, 200, {
+        ok: true,
+        endpointPrivacy: aiEndpointPrivacy(config.baseUrl),
+        models: models.map((model) => ({ id: String(model?.id || '') })).filter((model) => model.id),
+      });
+    } catch (error) {
+      sendJson(res, 422, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/ai/capabilities') {
+    try {
+      const config = aiProviderConfig();
+      if (!config.baseUrl || !config.model) throw new Error('請先儲存 Base URL 與模型名稱');
+      const capabilities = await inspectModelCapabilities(config, createProvider(config));
+      sendJson(res, 200, {
+        ok: true,
+        endpointPrivacy: aiEndpointPrivacy(config.baseUrl),
+        capabilities,
+      });
+    } catch (error) {
+      sendJson(res, 422, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/ai/test') {
+    try {
+      const config = aiProviderConfig();
+      if (!config.baseUrl || !config.model) throw new Error('請先儲存 Base URL 與模型名稱');
+      const result = await createProvider(config).test();
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 422, { ok: false, error: error.message });
+    }
+    return;
+  }
+  // ── /api/video/probe (FormData: 直接上傳檔案 probing) ──
+  if (req.method === 'POST' && url.pathname === '/api/video/probe') {
+    let upload = null;
+    try {
+      const tempDir = path.join(getJobsDir(), '.temp-probe');
+      upload = await streamMultipart(req, tempDir);
+      const { files } = upload;
+      if (!files.video) {
+        sendJson(res, 400, { error: '請上傳影片檔案' });
+        return;
+      }
+      const tempPath = files.video.path;
+
+      const probeCmd = toolPaths.ffprobe;
+      const probeArgs = [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        tempPath,
+      ];
+      const { stdout } = await new Promise((resolve, reject) => {
+        const proc = spawn(probeCmd, probeArgs, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+        let out = '';
+        proc.stdout.on('data', (chunk) => { out += chunk; });
+        proc.stderr.on('data', () => { /* silence */ });
+        proc.on('close', (code) => {
+          if (code === 0) resolve({ stdout: out });
+          else reject(new Error(`ffprobe exit code ${code}`));
+        });
+        proc.on('error', reject);
+      });
+
+      const info = JSON.parse(stdout);
+      const videoStream = info.streams?.find((s) => s.codec_type === 'video');
+      const format = info.format || {};
+      const durationSec = parseFloat(format.duration) || 0;
+      const width = parseInt(videoStream?.width || '0', 10);
+      const height = parseInt(videoStream?.height || '0', 10);
+      sendJson(res, 200, {
+        duration: durationSec,
+        resolution: width && height ? `${width}×${height}` : '-',
+      });
+    } catch (error) {
+      console.error('[api] video probe error:', error.message);
+      sendJson(res, 500, { error: error.message });
+    } finally {
+      upload?.cleanup();
+    }
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/jobs') {
+    try {
+      const jobs = listJobs();
+      const requestedOffset = Number(url.searchParams.get('offset') || 0);
+      const requestedLimit = Number(url.searchParams.get('limit'));
+      const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0;
+      const hasLimit = Number.isFinite(requestedLimit) && requestedLimit > 0;
+      const limit = hasLimit ? Math.min(500, Math.floor(requestedLimit)) : jobs.length;
+      sendJson(res, 200, {
+        jobs: jobs.slice(offset, offset + limit),
+        total: jobs.length,
+        offset,
+        limit,
+        hasMore: offset + limit < jobs.length,
+      });
+    } catch (error) {
+      console.error('[api] Job list error:', error.message);
+      sendJson(res, 500, { error: error.message });
+    }
     return;
   }
   if (req.method === 'POST' && url.pathname === '/api/jobs') {
+    let upload = null;
     try {
-      sendJson(res, 201, createJob(parseMultipart(await readRequest(req), req.headers['content-type'])));
+      upload = await streamMultipart(req, path.join(getJobsDir(), '.temp-upload'));
+      const result = createJob(upload);
+      console.log('[api] Job created:', result.jobId);
+      sendJson(res, 201, result);
     } catch (error) {
+      console.error('[api] Job creation error:', error.message, error.stack);
       sendJson(res, 400, { error: error.message });
+    } finally {
+      upload?.cleanup();
     }
     return;
   }
@@ -545,9 +4211,34 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (req.method === 'DELETE' && !action) {
+    try {
+      sendJson(res, 200, deleteJob(job));
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && action === 'start') {
-    startJob(jobId);
-    sendJson(res, 202, { ok: true });
+    const result = startJob(jobId);
+    if (result.error) sendJson(res, 400, { ok: false, error: result.error });
+    else sendJson(res, 202, { ok: true, ...result });
+    return;
+  }
+  if (req.method === 'POST' && action === 'cancel') {
+    const cancelled = cancelJob(jobId);
+    if (!cancelled) {
+      sendJson(res, 409, { ok: false, error: '目前沒有執行中的任務' });
+    } else {
+      sendJson(res, 202, { ok: true, cancelled: true });
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'retry') {
+    const result = retryJob(jobId);
+    if (result.error) sendJson(res, 409, { ok: false, error: result.error });
+    else sendJson(res, 202, { ok: true, ...result });
     return;
   }
   if (req.method === 'GET' && action === 'status') {
@@ -556,6 +4247,105 @@ async function handleApi(req, res) {
   }
   if (req.method === 'GET' && action === 'files') {
     sendJson(res, 200, job.status.files || {});
+    return;
+  }
+  if (req.method === 'GET' && action === 'subtitle') {
+    try {
+      const subtitlePath = getReviewSubtitlePath(job);
+      if (!subtitlePath) throw new Error('No subtitle is available for this job.');
+      const format = String(url.searchParams.get('format') || 'srt').toLowerCase();
+      const srtContent = fs.readFileSync(subtitlePath, 'utf8');
+      const bilingualPath = path.join(job.jobRoot, 'review-output', 'bilingual-cues.json');
+      const bilingualLayoutPath = path.join(job.jobRoot, 'review-output', 'bilingual-layout.txt');
+      const bilingualLayout = fs.existsSync(bilingualLayoutPath) && fs.readFileSync(bilingualLayoutPath, 'utf8').trim() === 'translated-top' ? 'translated-top' : 'source-top';
+      const bilingualCues = fs.existsSync(bilingualPath) ? normalizeBilingualCues(JSON.parse(fs.readFileSync(bilingualPath, 'utf8'))) : null;
+      const baseName = path.parse(displayFileName(job.config.files.video || jobId)).name || 'subtitle';
+      const encodedBaseName = encodeURIComponent(baseName);
+      if (format === 'vtt') {
+        const body = bilingualCues ? serializeVtt(bilingualCues, bilingualLayout) : buildVttFromSrt(srtContent);
+        res.writeHead(200, {
+          'Content-Type': 'text/vtt; charset=utf-8',
+          'Content-Disposition': `attachment; filename="subtitle.vtt"; filename*=UTF-8''${encodedBaseName}.vtt`,
+          'Content-Length': Buffer.byteLength(body),
+        });
+        res.end(body);
+        return;
+      }
+      if (format === 'ass' && bilingualCues) {
+        const body = bilingualCues.map((cue) => `Dialogue: 0,${formatAssTime(cue.start)},${formatAssTime(cue.end)},Default,,0,0,0,,${renderCueText(cue, bilingualLayout).replace(/\r?\n/g, '\\N').replace(/[{}]/g, '').replace(/,/g, '，')}`).join('\n');
+        const ass = `[Script Info]\nTitle: Offline Subtitle Factory Bilingual Export\nScriptType: v4.00+\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${body}\n`;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="subtitle.ass"; filename*=UTF-8''${encodedBaseName}.ass`, 'Content-Length': Buffer.byteLength(ass) });
+        res.end(ass);
+        return;
+      }
+      if (format !== 'srt') throw new Error('Unsupported subtitle format.');
+      const body = srtContent.replace(/\r?\n/g, '\r\n');
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="subtitle.srt"; filename*=UTF-8''${encodedBaseName}.srt`,
+        'Content-Length': Buffer.byteLength(body),
+      });
+      res.end(body);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'GET' && action === 'edit-plan') {
+    try {
+      const original = getOriginalVideoPath(job);
+      if (!original) throw new Error('找不到原始影片');
+      const sourceDuration = await probeDurationSeconds(original);
+      const effective = getEffectiveVideoPath(job);
+      const effectiveDuration = effective ? await probeDurationSeconds(effective) : sourceDuration;
+      sendJson(res, 200, {
+        jobId,
+        plan: readEditPlan(job.jobRoot),
+        sourceDuration,
+        effectiveDuration,
+        sourceFileName: displayFileName(path.basename(original)),
+        effectiveVideoUrl: jobMediaUrl(job, effective),
+        originalVideoUrl: jobMediaUrl(job, original),
+        trimStatus: readTrimStatus(job),
+        jobStatus: { status: job.status.status, stage: job.status.stage },
+      });
+    } catch (error) {
+      sendJson(res, 422, { error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'PUT' && action === 'edit-plan') {
+    try {
+      const payload = await readJsonBody(req);
+      const plan = await saveEditPlan(job, payload);
+      sendJson(res, 200, { ok: true, plan });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'apply-trim') {
+    const result = startTrim(jobId);
+    if (result.error) sendJson(res, result.statusCode || 400, { ok: false, error: result.error });
+    else sendJson(res, 202, { ok: true, started: true, message: '影片修剪已啟動' });
+    return;
+  }
+  if (req.method === 'GET' && action === 'trim-status') {
+    sendJson(res, 200, readTrimStatus(job));
+    return;
+  }
+  if (req.method === 'POST' && action === 'cancel-trim') {
+    const cancelled = cancelTrim(jobId);
+    if (!cancelled) sendJson(res, 409, { ok: false, error: '目前沒有進行中的修剪任務' });
+    else sendJson(res, 202, { ok: true, cancelled: true });
+    return;
+  }
+  if (req.method === 'DELETE' && action === 'trim') {
+    try {
+      sendJson(res, 200, restoreOriginalMedia(job));
+    } catch (error) {
+      sendJson(res, error.statusCode || 400, { ok: false, error: error.message });
+    }
     return;
   }
   if (req.method === 'POST' && action === 'open-folder') {
@@ -571,7 +4361,7 @@ async function handleApi(req, res) {
   }
   if (req.method === 'GET' && action === 'review-data') {
     const subtitlePath = getReviewSubtitlePath(job);
-    const videoPath = getVideoPath(job);
+    const videoPath = getEffectiveVideoPath(job);
     if (!subtitlePath) {
       sendJson(res, 404, { error: '找不到可校閱字幕，請先完成字幕生成' });
       return;
@@ -580,13 +4370,197 @@ async function handleApi(req, res) {
       sendJson(res, 404, { error: '找不到任務影片' });
       return;
     }
+    const bilingualPath = path.join(job.jobRoot, 'review-output', 'bilingual-cues.json');
+    let subtitle = fs.readFileSync(subtitlePath, 'utf8');
+    let bilingualCues;
+    if (fs.existsSync(bilingualPath)) {
+      bilingualCues = JSON.parse(fs.readFileSync(bilingualPath, 'utf8'));
+    } else {
+      try {
+        bilingualCues = parseSrtBilingual(subtitle);
+      } catch (error) {
+        const repaired = sanitizeWhisperSrt(subtitle);
+        if (!repaired.cues.length) throw error;
+        subtitle = repaired.subtitle;
+        bilingualCues = parseSrtBilingual(subtitle);
+        console.warn(`[review] 已略過 ${repaired.droppedCount} 段無效 Whisper SRT cue：${job.config.jobId}`);
+      }
+    }
+    const qualityPath = path.join(job.jobRoot, 'working', 'quality-metadata.json');
+    if (fs.existsSync(qualityPath)) {
+      const qualityCues = JSON.parse(fs.readFileSync(qualityPath, 'utf8'));
+      const attached = attachWhisperQuality(normalizeBilingualCues(bilingualCues), qualityCues);
+      if (attached.matched) bilingualCues = attached.cues;
+    }
     sendJson(res, 200, {
       jobId,
-      videoFileName: path.basename(videoPath),
-      subtitleFileName: path.basename(subtitlePath),
-      videoUrl: `/job-media/${encodeURIComponent(jobId)}/input/${encodeURIComponent(path.basename(videoPath))}`,
-      subtitle: fs.readFileSync(subtitlePath, 'utf8'),
+      videoFileName: displayFileName(path.basename(videoPath)),
+      subtitleFileName: displayFileName(path.basename(subtitlePath)),
+      videoUrl: jobMediaUrl(job, videoPath),
+      subtitle,
+      bilingualCues,
+      bilingualLayout: fs.existsSync(path.join(job.jobRoot, 'review-output', 'bilingual-layout.txt')) ? fs.readFileSync(path.join(job.jobRoot, 'review-output', 'bilingual-layout.txt'), 'utf8').trim() : 'source-top',
     });
+    return;
+  }
+  if (req.method === 'POST' && action === 'apply-rules') {
+    let upload = null;
+    try {
+      upload = await streamMultipart(req, path.join(getJobsDir(), '.temp-upload'));
+      const ruleFile = upload.files.ruleFile;
+      const subtitleFile = upload.files.subtitle;
+      const ruleText = ruleFile
+        ? fs.readFileSync(ruleFile.path, 'utf8')
+        : String(upload.fields.ruleText || '');
+      if (!ruleText.trim()) throw new Error('Missing rule file or rule text.');
+      const subtitleText = subtitleFile
+        ? fs.readFileSync(subtitleFile.path, 'utf8')
+        : String(upload.fields.subtitle || '');
+      const existingSubtitlePath = getReviewSubtitlePath(job);
+      const sourceSubtitle = subtitleText.trim()
+        ? subtitleText
+        : (existingSubtitlePath ? fs.readFileSync(existingSubtitlePath, 'utf8') : '');
+      if (!sourceSubtitle.trim()) throw new Error('No subtitle is available for rule cleanup.');
+      const result = applyRulesToReviewSubtitle(job, sourceSubtitle, ruleText, ruleFile?.filename || 'review-rule.txt');
+      sendJson(res, 200, {
+        ok: true,
+        subtitle: result.ruleResults.cleanedSrt,
+        totalCues: result.ruleResults.totalCues,
+        changedCues: result.ruleResults.changedCues,
+        files: {
+          subtitle: relativeToApp(result.subtitlePath),
+          rule: relativeToApp(result.rulePath),
+          report: relativeToApp(result.reportPath),
+        },
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    } finally {
+      upload?.cleanup();
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'apply-bilingual-rules') {
+    try {
+      const payload = await readJsonBody(req);
+      const cues = normalizeBilingualCues(payload.bilingualCues);
+      if (cues.length === 0 || typeof payload.ruleText !== 'string' || !payload.ruleText.trim()) throw new Error('缺少雙語字幕或規則內容');
+      const rules = parseRules(payload.ruleText);
+      const forceTraditional = rules.forceTraditional ?? job.config.language === 'zh-TW';
+      const sourceSrt = serializeSrt(cues.map((cue) => ({ ...cue, translatedText: cue.sourceText })), 'source-top');
+      const translatedSrt = serializeSrt(cues.map((cue) => ({ ...cue, sourceText: cue.translatedText })), 'source-top');
+      const sourceResult = applyRulesToSrt(sourceSrt, rules, { forceTraditional });
+      const translatedResult = applyRulesToSrt(translatedSrt, rules, { forceTraditional });
+      const sourceCues = parseSrtBilingual(sourceResult.cleanedSrt);
+      const translatedCues = parseSrtBilingual(translatedResult.cleanedSrt);
+      if (sourceCues.length !== cues.length || translatedCues.length !== cues.length) throw new Error('規則處理改變了雙語 cue 數量');
+      const bilingualCues = cues.map((cue, index) => ({ ...cue, sourceText: sourceCues[index].sourceText, translatedText: translatedCues[index].sourceText, text: translatedCues[index].sourceText }));
+      const subtitle = serializeSrt(bilingualCues, payload.layout === 'translated-top' ? 'translated-top' : 'source-top');
+      sendJson(res, 200, { ok: true, subtitle, bilingualCues, totalCues: cues.length, changedCues: bilingualCues.filter((cue, index) => cue.sourceText !== cues[index].sourceText || cue.translatedText !== cues[index].translatedText).length });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'ai-optimize') {
+    try {
+      if (aiOptimizationJobs.get(jobId)?.status === 'running') throw new Error('此任務已有 AI 優化正在進行');
+      const payload = await readJsonBody(req);
+      const record = startAiOptimizationJob(job, payload);
+      sendJson(res, 202, { ok: true, status: record.status, progress: record.progress });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'GET' && action === 'ai-project-settings') {
+    sendJson(res, 200, { ok: true, settings: loadProjectAiSettings(job) });
+    return;
+  }
+  if (req.method === 'POST' && action === 'ai-project-settings') {
+    try { sendJson(res, 200, { ok: true, settings: saveProjectAiSettings(job, await readJsonBody(req)) }); }
+    catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+  if (req.method === 'POST' && action === 'ai-glossary-import') {
+    try {
+      const payload = await readJsonBody(req);
+      const current = loadProjectAiSettings(job);
+      const glossary = payload.format === 'csv' ? parseGlossaryCsv(payload.content) : normalizeProjectAiSettings({ glossary: JSON.parse(payload.content || '[]') }).glossary;
+      sendJson(res, 200, { ok: true, settings: saveProjectAiSettings(job, { ...current, glossary }) });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+  if (req.method === 'GET' && action === 'ai-glossary-export') {
+    const settings = loadProjectAiSettings(job);
+    if (url.searchParams.get('format') === 'csv') sendText(res, 200, glossaryToCsv(settings.glossary));
+    else sendJson(res, 200, settings.glossary);
+    return;
+  }
+  if (req.method === 'GET' && action === 'ai-sessions') {
+    sendJson(res, 200, { ok: true, sessions: listAiSessions(job) });
+    return;
+  }
+  if (req.method === 'POST' && action === 'ai-session-decisions') {
+    try {
+      const payload = await readJsonBody(req);
+      sendJson(res, 200, { ok: true, session: updateAiSessionDecisions(job, payload.sessionId, payload.decisions) });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+  if (req.method === 'POST' && ['undo-ai-session', 'redo-ai-session'].includes(action)) {
+    try {
+      const payload = await readJsonBody(req);
+      sendJson(res, 200, { ok: true, ...sessionTextChanges(job, payload.sessionId, payload.cues, action.startsWith('undo') ? 'undo' : 'redo') });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+  if (req.method === 'GET' && action === 'ai-optimize') {
+    const record = aiOptimizationJobs.get(jobId) || loadAiRecord(job);
+    if (!record) sendJson(res, 404, { ok: false, error: '找不到 AI 優化任務' });
+    else sendJson(res, 200, { ok: true, ...publicAiRecord(record) });
+    return;
+  }
+  if (req.method === 'POST' && action === 'resume-ai-optimize') {
+    try {
+      if (aiOptimizationJobs.get(jobId)?.status === 'running') throw new Error('此任務已有 AI 優化正在進行');
+      const previous = aiOptimizationJobs.get(jobId) || loadAiRecord(job);
+      if (!previous?.request || !['failed', 'interrupted', 'cancelled'].includes(previous.status)) throw new Error('目前沒有可恢復的 AI 優化任務');
+      const record = startAiOptimizationJob(job, previous.request, previous);
+      sendJson(res, 202, { ok: true, status: record.status, progress: record.progress, resumedFromBatch: record.checkpoint.nextBatchIndex });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'cancel-ai-optimize') {
+    const record = aiOptimizationJobs.get(jobId);
+    if (!record || record.status !== 'running') {
+      sendJson(res, 409, { ok: false, error: '目前沒有進行中的 AI 優化任務' });
+    } else {
+      record.controller.abort(new Error('使用者取消 AI 優化'));
+      record.status = 'cancelled';
+      record.retryable = record.checkpoint.nextBatchIndex > 0;
+      persistAiRecord(job, record);
+      sendJson(res, 200, { ok: true, cancelled: true });
+    }
+    return;
+  }
+  if (req.method === 'GET' && action === 'thumbnail') {
+    try {
+      serveFile(req, res, await getProjectThumbnail(job));
+    } catch (error) {
+      sendJson(res, 422, { error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'GET' && action === 'waveform') {
+    try {
+      const result = await getWaveform(job, url.searchParams.get('points'), url.searchParams.get('source') || 'effective');
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 422, { error: error.message });
+    }
     return;
   }
   if (req.method === 'POST' && action === 'save-review') {
@@ -596,9 +4570,17 @@ async function handleApi(req, res) {
       const reviewOutputDir = path.join(job.jobRoot, 'review-output');
       fs.mkdirSync(reviewOutputDir, { recursive: true });
       const subtitlePath = path.join(reviewOutputDir, 'reviewed.srt');
+      const bilingualPath = path.join(reviewOutputDir, 'bilingual-cues.json');
+      const layoutPath = path.join(reviewOutputDir, 'bilingual-layout.txt');
       fs.writeFileSync(subtitlePath, payload.subtitle.replace(/\r?\n/g, '\r\n'), 'utf8');
-      updateJob(job, { files: { ...(job.status.files || {}), reviewedSrt: subtitlePath } }, '已儲存校閱後字幕');
-      sendJson(res, 200, { ok: true, files: { subtitle: relativeToApp(subtitlePath) } });
+      const files = { subtitle: relativeToApp(subtitlePath) };
+      if (Array.isArray(payload.bilingualCues)) {
+        writeJson(bilingualPath, normalizeBilingualCues(payload.bilingualCues));
+        fs.writeFileSync(layoutPath, payload.bilingualLayout === 'translated-top' ? 'translated-top\n' : 'source-top\n', 'utf8');
+        files.bilingualCues = relativeToApp(bilingualPath);
+      }
+      updateJob(job, { files: { ...(job.status.files || {}), reviewedSrt: subtitlePath, ...(files.bilingualCues ? { bilingualCues: bilingualPath } : {}) } }, '已儲存校閱後字幕');
+      sendJson(res, 200, { ok: true, files });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: error.message });
     }
@@ -612,10 +4594,21 @@ async function handleApi(req, res) {
       const reviewOutputDir = path.join(job.jobRoot, 'review-output');
       fs.mkdirSync(reviewOutputDir, { recursive: true });
       const subtitlePath = path.join(reviewOutputDir, 'reviewed.srt');
+      const bilingualPath = path.join(reviewOutputDir, 'bilingual-cues.json');
+      const layoutPath = path.join(reviewOutputDir, 'bilingual-layout.txt');
       const settingsPath = path.join(reviewOutputDir, 'burn-settings.json');
       const stylePath = path.join(reviewOutputDir, 'burn-settings.ffmpeg-style.txt');
       const manifestPath = path.join(reviewOutputDir, 'export-manifest.json');
       const settings = normalizeBurnSettings(payload.settings);
+      const bilingualCues = Array.isArray(payload.bilingualCues) ? normalizeBilingualCues(payload.bilingualCues) : null;
+      if (bilingualCues) {
+        const serializedCues = parseSrtBilingual(payload.subtitle);
+        if (serializedCues.length !== bilingualCues.length) throw new Error('雙語字幕 cue 數量不一致');
+        serializedCues.forEach((cue, index) => {
+          const bilingual = bilingualCues[index];
+          if (Math.abs(cue.start - bilingual.start) > 0.001 || Math.abs(cue.end - bilingual.end) > 0.001) throw new Error(`雙語字幕第 ${index + 1} 段時間碼不一致`);
+        });
+      }
       const manifest = {
         ...(payload.manifest || {}),
         savedAt: new Date().toISOString(),
@@ -624,19 +4617,48 @@ async function handleApi(req, res) {
           settings: relativeToApp(settingsPath),
           ffmpegStyle: relativeToApp(stylePath),
           manifest: relativeToApp(manifestPath),
+          ...(bilingualCues ? { bilingualCues: relativeToApp(bilingualPath) } : {}),
         },
       };
       fs.writeFileSync(subtitlePath, payload.subtitle.replace(/\r?\n/g, '\r\n'), 'utf8');
+      if (bilingualCues) {
+        writeJson(bilingualPath, bilingualCues);
+        fs.writeFileSync(layoutPath, payload.bilingualLayout === 'translated-top' ? 'translated-top\n' : 'source-top\n', 'utf8');
+      }
       writeJson(settingsPath, settings);
       fs.writeFileSync(stylePath, `${buildFfmpegStyle(settings)}\n`, 'utf8');
       writeJson(manifestPath, manifest);
       updateJob(job, {
-        files: { ...(job.status.files || {}), reviewedSrt: subtitlePath, burnSettings: settingsPath, ffmpegStyle: stylePath, manifest: manifestPath },
+        files: { ...(job.status.files || {}), reviewedSrt: subtitlePath, ...(bilingualCues ? { bilingualCues: bilingualPath } : {}), burnSettings: settingsPath, ffmpegStyle: stylePath, manifest: manifestPath },
       }, '已儲存完整校稿包');
       sendJson(res, 200, { ok: true, folder: relativeToApp(reviewOutputDir), files: manifest.files });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: error.message });
     }
+    return;
+  }
+  if (req.method === 'POST' && action === 'burn') {
+    try {
+      const payload = await readJsonBody(req);
+      const result = startBurn(jobId, payload || {});
+      if (result.error) {
+        sendJson(res, 404, { ok: false, error: result.error });
+      } else {
+        sendJson(res, 202, {
+          ok: true,
+          started: result.started,
+          alreadyRunning: Boolean(result.alreadyRunning),
+          message: result.alreadyRunning ? '輸出已在進行中' : '字幕輸出已啟動',
+        });
+      }
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+  if (req.method === 'POST' && action === 'cancel-burn') {
+    const cancelled = cancelBurn(jobId);
+    sendJson(res, 200, { ok: true, cancelled });
     return;
   }
 
@@ -645,13 +4667,68 @@ async function handleApi(req, res) {
 
 const server = createServer(async (req, res) => {
   try {
-    if (req.url.startsWith('/api/')) await handleApi(req, res);
+    if (req.url.startsWith('/api/')) {
+      const origin = req.headers.origin || '';
+      const localOrigin = !origin || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(origin);
+      if (!localOrigin) {
+        sendJson(res, 403, { error: '不允許的請求來源' });
+        return;
+      }
+      if (apiToken && req.headers['x-offline-subtitle-token'] !== apiToken) {
+        sendJson(res, 401, { error: '本機 API 驗證失敗' });
+        return;
+      }
+      await handleApi(req, res);
+    }
     else serveStatic(req, res);
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    console.error('[server] Request error:', error.message);
+    if (!res.headersSent) sendJson(res, 500, { error: error.message });
   }
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Offline Subtitle Factory running at http://127.0.0.1:${port}`);
+process.on('uncaughtException', (error) => {
+  console.error('[server] Uncaught exception:', error.message, error.stack);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled rejection:', reason);
+});
+
+function findAvailablePort(startPort, maxAttempts = 20) {
+  return new Promise((resolve) => {
+    let attempts = 0;
+    function tryPort(p) {
+      const tempServer = createServer();
+      tempServer.listen(p, '127.0.0.1', () => {
+        tempServer.close(() => resolve(p));
+      });
+      tempServer.on('error', () => {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          resolve(startPort);
+          return;
+        }
+        tryPort(startPort + attempts);
+      });
+    }
+    tryPort(startPort);
+  });
+}
+
+findAvailablePort(port).then((finalPort) => {
+  if (finalPort !== port) {
+    console.log(`Port ${port} is in use, using ${finalPort} instead`);
+  }
+  // Write actual port to a temp file so main process can read it
+  const portFilePath = path.join(process.env.TEMP || '/tmp', 'offline-subtitle-port.tmp');
+  try {
+    fs.writeFileSync(portFilePath, String(finalPort), 'utf8');
+  } catch {}
+  server.listen(finalPort, '127.0.0.1', () => {
+    console.log(`Offline Subtitle Factory running at http://127.0.0.1:${finalPort}`);
+  });
+}).catch((err) => {
+  console.error('Failed to start server:', err.message);
+  process.exit(1);
 });

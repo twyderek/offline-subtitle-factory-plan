@@ -4,15 +4,49 @@ setlocal EnableExtensions
 set "APP_DIR=%~dp0"
 set "PORT=8790"
 set "URL=http://127.0.0.1:%PORT%"
-set "NODE_EXE=%APP_DIR%tools\node\node.exe"
+if not defined OFFLINE_SUBTITLE_TOOLS_DIR set "OFFLINE_SUBTITLE_TOOLS_DIR=%APP_DIR%tools"
+set "TOOLS_DIR=%OFFLINE_SUBTITLE_TOOLS_DIR%"
+set "NODE_EXE=%TOOLS_DIR%\node\node.exe"
+set "PYTHON_EXE="
+if exist "%TOOLS_DIR%\python\python.exe" set "PYTHON_EXE=%TOOLS_DIR%\python\python.exe"
+if not defined PYTHON_EXE if exist "%TOOLS_DIR%\python-embed\python.exe" set "PYTHON_EXE=%TOOLS_DIR%\python-embed\python.exe"
+if not defined PYTHON_EXE if exist "%TOOLS_DIR%\python-venv\Scripts\python.exe" set "PYTHON_EXE=%TOOLS_DIR%\python-venv\Scripts\python.exe"
+set "FFMPEG_EXE=%TOOLS_DIR%\ffmpeg\bin\ffmpeg.exe"
+set "SETUP_BAT=%APP_DIR%setup-local-tools.bat"
 set "SERVER_FILE=%APP_DIR%server.mjs"
 
 cd /d "%APP_DIR%"
 
+:: ── Pre-flight: check all critical tools ─────────────────────────────────────
+set "MISSING_TOOLS="
+
 if not exist "%NODE_EXE%" (
+  set "MISSING_TOOLS=!MISSING_TOOLS!Node.js "
+)
+if not exist "%FFMPEG_EXE%" (
+  set "MISSING_TOOLS=!MISSING_TOOLS!FFmpeg "
+)
+if not defined PYTHON_EXE (
+  set "MISSING_TOOLS=!MISSING_TOOLS!Python "
+)
+if defined PYTHON_EXE if not exist "%PYTHON_EXE%" (
+  set "MISSING_TOOLS=!MISSING_TOOLS!Python "
+)
+
+if defined MISSING_TOOLS (
   echo.
-  echo [ERROR] Project-local Node.js was not found.
-  echo Please run setup-local-tools.bat first.
+  echo ============================================================
+  echo   環境工具尚未安裝完成
+  echo   Missing tools: !MISSING_TOOLS!
+  echo ============================================================
+  echo.
+  echo 請先執行安裝腳本來安裝所需工具：
+  echo.
+  echo   %SETUP_BAT%
+  echo.
+  echo 或直接在檔案總管中雙擊 setup-local-tools.bat
+  echo.
+  echo 安裝完成後，再次執行 start-offline-subtitle-factory.bat 即可。
   echo.
   pause
   exit /b 1
@@ -31,7 +65,6 @@ if not exist "%SERVER_FILE%" (
 echo.
 echo Starting Offline Subtitle Factory...
 echo App folder: %APP_DIR%
-echo Node: %NODE_EXE%
 echo URL: %URL%
 echo.
 
@@ -40,9 +73,13 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr "127.0.0.1:%PORT%" ^| findstr
   taskkill /PID %%P /F >nul 2>nul
 )
 
-set "PATH=%APP_DIR%tools\ffmpeg\bin;%APP_DIR%tools\python-venv\Scripts;%PATH%"
-set "XDG_CACHE_HOME=%APP_DIR%tools"
-set "WHISPER_CACHE=%APP_DIR%tools\whisper-models"
+for %%I in ("%FFMPEG_EXE%") do set "FFMPEG_DIR=%%~dpI"
+for %%I in ("%PYTHON_EXE%") do set "PYTHON_DIR=%%~dpI"
+set "PATH=%FFMPEG_DIR%;%PYTHON_DIR%;%PATH%"
+set "XDG_CACHE_HOME=%TOOLS_DIR%"
+set "WHISPER_CACHE=%TOOLS_DIR%\whisper-models"
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
 
 start "" "%URL%"
 "%NODE_EXE%" "%SERVER_FILE%"

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "engine": "breeze-asr-25",
+  "runtimeVersion": "2026.08.1",
+  "platform": "win32",
+  "arch": "x64",
+  "variant": "cpu",
+  "pythonVersion": "3.11",
+  "releaseStatus": "published",
+  "download": {
+    "available": true,
+    "url": "https://github.com/twyderek/offline-subtitle-factory-app/releases/download/breeze-runtime-2026.08.1/breeze-runtime-win-x64-cpu-2026.08.1.zip",
+    "filename": "breeze-runtime-win-x64-cpu-2026.08.1.zip",
+    "size": 286785161,
+    "uncompressedSize": 1436390789,
+    "sha256": "724e8bcb45c7a1373e1d1eca0e413897354326a4fae207948e72ec529bb8bf4b"
+  },
+  "entrypoint": "python.exe",
+  "probe": {
+    "module": "whisper",
+    "requiredModel": "breeze-asr-25"
+  },
+  "source": {
+    "breezeRepository": "https://github.com/mtkresearch/Breeze-ASR-25",
+    "breezeRevision": "c0993ecd98522d61066d3f5ce769e35c848b7855",
+    "patchedWhisperRevision": "f94c6ba670a35ee8d720d4221e102f4685c288d6"
+  }
+}

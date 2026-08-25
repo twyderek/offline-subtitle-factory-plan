@@ -1,13 +1,218 @@
 {
   "name": "offline-subtitle-factory",
-  "version": "0.1.0",
+  "version": "0.50.0",
   "private": true,
   "type": "module",
   "description": "Local-first offline subtitle generation frontend MVP.",
+  "author": "Offline Subtitle Factory",
+  "main": "electron/main.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "electron:start": "electron .",
+    "electron:dev": "node scripts/start-electron-dev.mjs",
+    "project:preflight": "node scripts/project-preflight.mjs",
+    "docs:check": "node scripts/check-project-docs.mjs",
+    "docs:check:final": "node scripts/check-project-docs.mjs --final",
+    "probe:ollama:live": "node scripts/probe-ollama-live.mjs",
+    "acceptance:whisper-models": "node scripts/verify-whisper-model-downloads.mjs",
+    "acceptance:provider": "node scripts/probe-provider-live.mjs",
+    "probe:breeze": "node scripts/probe-breeze-asr.mjs",
+    "test": "node scripts/test-whisper-fallback-policy.mjs && node scripts/test-whisper-models.mjs && node scripts/test-whisper-model-download.mjs && node scripts/test-whisper-srt.mjs && node scripts/test-breeze-asr.mjs && node scripts/test-breeze-runtime-manager.mjs && node scripts/test-project-preflight.mjs && node scripts/test-standing-authorization.mjs && node scripts/test-project-docs-validator.mjs && node scripts/test-media-edit.mjs && node scripts/test-bilingual-subtitles.mjs && node scripts/test-subtitle-quality.mjs && node scripts/test-whisper-quality.mjs && node scripts/test-ai-fetch.mjs && node scripts/test-ai-optimizer.mjs && node scripts/test-ai-providers.mjs && node scripts/test-ollama-batch-stream.mjs && node scripts/test-review-ui.mjs && node scripts/test-core.mjs",
+    "check": "npm run docs:check && node --check server.mjs && node --check public/app.js && node --check public/review.js && node --check public/trim.js && node --check electron/main.mjs && npm test",
+    "runtime:manifest": "node scripts/write-runtime-manifest.mjs --target=win32-x64",
+    "runtime:manifest:mac": "node scripts/write-runtime-manifest.mjs --target=darwin-arm64",
+    "runtime:verify": "node scripts/verify-runtime-package.mjs --target=win32-x64",
+    "runtime:verify:mac": "node scripts/verify-runtime-package.mjs --target=darwin-arm64",
+    "codesign:windows:assert": "powershell -ExecutionPolicy Bypass -File scripts/assert-windows-codesign.ps1",
+    "codesign:windows:verify": "powershell -ExecutionPolicy Bypass -File scripts/verify-windows-signatures.ps1",
+    "electron:build:dir": "npm run runtime:manifest && npm run runtime:verify && electron-builder --win --x64 --dir --publish never",
+    "electron:build:unsigned": "npm run runtime:manifest && npm run runtime:verify && electron-builder --win --x64 --publish never",
+    "electron:build": "npm run runtime:manifest && npm run runtime:verify && npm run codesign:windows:assert && electron-builder --win --x64 --publish never && npm run codesign:windows:verify",
+    "electron:build:mac:dir": "npm run runtime:manifest:mac && npm run runtime:verify:mac && electron-builder --mac --arm64 --dir",
+    "electron:build:mac": "npm run runtime:manifest:mac && npm run runtime:verify:mac && electron-builder --mac --arm64"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.7"
+  },
+  "build": {
+    "appId": "com.offline-subtitle-factory.app",
+    "productName": "離線字幕工廠",
+    "directories": {
+      "output": "../dist"
+    },
+    "asar": false,
+    "compression": "maximum",
+    "npmRebuild": false,
+    "afterPack": "scripts/after-pack.cjs",
+    "files": [
+      "server.mjs",
+      "lib/**/*",
+      "runtime-manifests/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "README.md",
+      "docs/BREEZE-ASR-25.md",
+      "docs/WHISPER-MODEL-DOWNLOAD.md",
+      "THIRD-PARTY-NOTICES.md",
+      "RELEASE-NOTES-0.50.0.md",
+      "NEXT-VERSION-FIX-LOG.md",
+      "FINAL-VERSION-LOG.md",
+      "RELEASE-NOTES-0.40.0.md",
+      "RELEASE-NOTES-0.41.0.md",
+      "RELEASE-NOTES-0.45.0.md",
+      "RELEASE-NOTES-0.45.1.md",
+      "RELEASE-NOTES-0.45.2.md",
+      "RELEASE-NOTES-0.46.0.md",
+      "RELEASE-NOTES-0.47.1.md",
+      "RELEASE-NOTES-0.48.0.md",
+      "RELEASE-NOTES-0.48.1.md",
+      "RELEASE-NOTES-0.49.0.md",
+      "RELEASE-NOTES-0.49.1.md",
+      "package.json",
+      ".gitignore",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/*.pem",
+      "!**/*.key",
+      "!**/*.p12",
+      "!**/*.pfx",
+      "!**/*.cer",
+      "!**/*.crt",
+      "!**/*.mobileprovision",
+      "!**/secrets/**",
+      "!**/credentials/**"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "離線字幕工廠",
+      "installerIcon": "electron/icons/icon.ico",
+      "uninstallerIcon": "electron/icons/icon.ico",
+      "installerHeaderIcon": "electron/icons/icon.ico"
+    },
+    "portable": {
+      "artifactName": "offline-subtitle-factory-portable-${version}.${ext}"
+    },
+    "win": {
+      "artifactName": "offline-subtitle-factory-setup-${version}.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icons/icon.ico",
+      "signAndEditExecutable": true,
+      "extraResources": [
+        {
+          "from": "docs/0.45.2",
+          "to": "docs/0.45.2",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "tools/ffmpeg",
+          "to": "tools/ffmpeg",
+          "filter": [
+            "bin/*.exe",
+            "LICENSE",
+            "README.txt"
+          ]
+        },
+        {
+          "from": "tools/whisper-cpp",
+          "to": "tools/whisper-cpp",
+          "filter": [
+            "*.exe",
+            "*.dll",
+            "LICENSE"
+          ]
+        },
+        {
+          "from": "tools/whisper-models/ggml-tiny.bin",
+          "to": "tools/whisper-models/ggml-tiny.bin"
+        },
+        {
+          "from": "tools/manifests/win32-x64.json",
+          "to": "tools/manifest.json"
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "electron/icons/icon.icns",
+      "category": "public.app-category.video",
+      "minimumSystemVersion": "12.0",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "offline-subtitle-factory-${version}-macos-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "docs/0.45.2",
+          "to": "docs/0.45.2",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "tools/ffmpeg",
+          "to": "tools/ffmpeg",
+          "filter": [
+            "bin/ffmpeg",
+            "bin/ffprobe",
+            "LICENSE-macos",
+            "README-macos.txt"
+          ]
+        },
+        {
+          "from": "tools/whisper-cpp",
+          "to": "tools/whisper-cpp",
+          "filter": [
+            "whisper-cli",
+            "LICENSE"
+          ]
+        },
+        {
+          "from": "tools/whisper-models/ggml-tiny.bin",
+          "to": "tools/whisper-models/ggml-tiny.bin"
+        },
+        {
+          "from": "tools/manifests/darwin-arm64.json",
+          "to": "tools/manifest.json"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
   }
 }

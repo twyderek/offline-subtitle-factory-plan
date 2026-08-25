@@ -2,6 +2,11 @@
 # 每一行定義一條規則，以 # 開頭的行為註解會被忽略
 # 支援的規則類型如下：
 
+# ── 繁體中文輸出 ──
+# 格式：FORCE_TRADITIONAL: true / false
+# 任務語言選「繁體中文」時預設啟用，可在特殊專案中設為 false 關閉。
+FORCE_TRADITIONAL: true
+
 # ── 口語詞移除 ──
 # 格式：REMOVE_FILLER: 用 | 分隔的口語詞清單
 # 這些詞會在字幕生成後被移除

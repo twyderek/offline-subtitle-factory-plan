@@ -1,0 +1,95 @@
+name: Build Breeze ASR 25 Windows Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      breeze_revision:
+        description: Fixed Breeze-ASR-25 commit
+        required: true
+        default: c0993ecd98522d61066d3f5ce769e35c848b7855
+      patched_whisper_revision:
+        description: Fixed third_party/whisper-patch-breeze commit
+        required: true
+        default: f94c6ba670a35ee8d720d4221e102f4685c288d6
+      runtime_version:
+        description: Managed runtime version
+        required: true
+        default: 2026.08.1
+      license_review_approved:
+        description: Confirmed Python/PyTorch/Breeze/patched-Whisper dependency redistribution review
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js for source checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install 7-Zip
+        shell: pwsh
+        run: choco install 7zip --no-progress --yes
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Run source regression and runtime manager tests
+        run: npm run check
+
+      - name: Build and probe Breeze runtime
+        shell: pwsh
+        run: |
+          $args = @{
+            OutputDirectory = (Join-Path $PWD 'breeze-runtime-output')
+            PythonExecutable = (Get-Command python).Source
+            BreezeRevision = '${{ inputs.breeze_revision }}'
+            PatchedWhisperRevision = '${{ inputs.patched_whisper_revision }}'
+            RuntimeVersion = '${{ inputs.runtime_version }}'
+          }
+          if ('${{ inputs.license_review_approved }}' -ne 'true') { throw 'license_review_approved 必須為 true；未完成授權審查不得建立 runtime asset。' }
+          & ./scripts/build-breeze-runtime-windows.ps1 @args -LicenseReviewApproved
+
+      - name: Verify generated metadata and archive
+        shell: pwsh
+        run: |
+          $metadata = Get-Content -LiteralPath breeze-runtime-output/release-metadata.json -Raw | ConvertFrom-Json
+          if (-not $metadata.manifest.download.available) { throw 'Runtime manifest 必須標示可下載。' }
+          if ($metadata.manifest.download.url -notmatch '^https://') { throw 'Runtime URL 必須是 HTTPS。' }
+          if ($metadata.manifest.download.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Runtime SHA-256 無效。' }
+          & 7z t (Join-Path $PWD (Join-Path 'breeze-runtime-output' $metadata.archive.filename))
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime ZIP 完整性驗證失敗。' }
+          $runtimePython = Join-Path $PWD 'breeze-runtime-output/work/runtime/python.exe'
+          if (-not (Test-Path -LiteralPath $runtimePython)) { throw '候選 runtime 缺少 staged python.exe。' }
+          & $runtimePython -c "import torch, whisper; assert torch.version.cuda is None and not torch.cuda.is_available(); assert 'breeze-asr-25' in whisper.available_models()"
+          if ($LASTEXITCODE -ne 0) { throw '候選 runtime CPU／Breeze capability probe 失敗。' }
+
+      - name: Remove staged build tree before artifact upload
+        shell: pwsh
+        run: Remove-Item -LiteralPath breeze-runtime-output/work -Recurse -Force
+
+      - name: Upload candidate runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: breeze-runtime-win-x64-cpu-${{ inputs.runtime_version }}
+          path: |
+            breeze-runtime-output/*.zip
+            breeze-runtime-output/*.json
+          if-no-files-found: error
+          retention-days: 14
