@@ -76,6 +76,15 @@ function buildSubtitleSchema(count, ids) {
   };
 }
 
+function buildResponseFormat(config, batch) {
+  const provider = String(config?.provider || '').toLowerCase();
+  const usesJsonSchema = config?.capabilities?.structuredOutput === 'json-schema'
+    || (provider === 'lm-studio' && config?.capabilities?.structuredOutput == null && config?.capabilities?.jsonSchema !== false);
+  if (usesJsonSchema) return buildSubtitleSchema(batch.length, batch.map((cue) => cue.id));
+  if (config?.capabilities?.jsonSchema !== false) return { type: 'json_object' };
+  return undefined;
+}
+
 function maxSubtitleTextLength(cue) {
   return Math.max(500, String(cue?.text || '').length * 6);
 }
@@ -88,74 +97,150 @@ function buildTextLengthInstruction(batch) {
 import { buildGlossaryInstruction } from './project-tools.mjs';
 import { canonicalizeLanguageTag, languagePromptInstruction } from './languages.mjs';
 
-function contentToText(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.map((part) => {
-      if (typeof part === 'string') return part;
-      if (typeof part?.text === 'string') return part.text;
-      if (typeof part?.content === 'string') return part.content;
-      return '';
-    }).filter(Boolean).join('\n');
+function contentToTextFragments(content, fragments = [], seen = new Set()) {
+  if (typeof content === 'string') {
+    fragments.push(content);
+    return fragments;
   }
-  if (content && typeof content === 'object') {
-    for (const key of ['text', 'content', 'response', 'output', 'result']) {
-      if (typeof content[key] === 'string') return content[key];
-    }
-    return JSON.stringify(content);
+  if (!content || typeof content !== 'object' || seen.has(content)) return fragments;
+  seen.add(content);
+  for (const nested of Array.isArray(content) ? content : Object.values(content)) {
+    contentToTextFragments(nested, fragments, seen);
   }
-  return '';
+  return fragments;
 }
 
-function findCueArray(value, seen = new Set()) {
-  if (Array.isArray(value)) return value;
-  if (!value || typeof value !== 'object' || seen.has(value)) return null;
-  seen.add(value);
-  if (Array.isArray(value.cues)) return value.cues;
-  for (const key of ['cues', 'response', 'output', 'result', 'data', 'content', 'message']) {
-    const nested = value[key];
-    if (typeof nested === 'string') {
+function contentToText(content) {
+  return contentToTextFragments(content).join('\n');
+}
+
+function findJsonValueEnd(text, start) {
+  const expectedClosers = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') expectedClosers.push('}');
+    else if (character === '[') expectedClosers.push(']');
+    else if (character === '}' || character === ']') {
+      if (expectedClosers.pop() !== character) return -1;
+      if (expectedClosers.length === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function extractJsonCandidates(value) {
+  const text = String(value || '').replace(/^\uFEFF/, '').trim();
+  if (!text) return [];
+  const candidates = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    const normalized = String(candidate || '').trim();
+    if (normalized && !seen.has(normalized)) {
+      seen.add(normalized);
+      candidates.push(normalized);
+    }
+  };
+  add(text);
+  const fencePattern = /```(?:json)?\s*([\s\S]*?)```/gi;
+  for (const match of text.matchAll(fencePattern)) add(match[1]);
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== '{' && text[index] !== '[') continue;
+    const end = findJsonValueEnd(text, index);
+    if (end > index) add(text.slice(index, end + 1));
+  }
+  return candidates;
+}
+
+function findCueArray(value, allowRootArray = false, seen = { objects: new Set(), strings: new Set() }) {
+  if (Array.isArray(value)) return allowRootArray ? value : null;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text || seen.strings.has(text)) return null;
+    seen.strings.add(text);
+    for (const candidate of extractJsonCandidates(text)) {
       try {
-        const parsed = JSON.parse(nested.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-        const cues = findCueArray(parsed, seen);
+        const parsed = JSON.parse(candidate);
+        const cues = findCueArray(parsed, true, seen);
         if (cues) return cues;
       } catch {}
-    } else {
-      const cues = findCueArray(nested, seen);
-      if (cues) return cues;
     }
+    return null;
+  }
+  if (!value || typeof value !== 'object' || seen.objects.has(value)) return null;
+  seen.objects.add(value);
+  if (Array.isArray(value.cues)) return value.cues;
+  for (const [key, nested] of Object.entries(value)) {
+    // Wrapper arrays (data, response, content, message, and any other field)
+    // are transport data, not subtitle cues. Only an explicit `cues` array is
+    // accepted here; a root array is handled by the caller for JSON candidates.
+    if (Array.isArray(nested)) {
+      if (key === 'cues') return nested;
+      continue;
+    }
+    const cues = findCueArray(nested, false, seen);
+    if (cues) return cues;
   }
   return null;
 }
 
-function parseCompletionContent(result) {
-  const content = contentToText(result?.choices?.[0]?.message?.content);
-  if (!content.trim()) throw new Error('AI 未回傳字幕內容');
-  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  const candidates = [cleaned];
-  const firstObject = cleaned.indexOf('{');
-  const firstArray = cleaned.indexOf('[');
-  const lastObject = cleaned.lastIndexOf('}');
-  const lastArray = cleaned.lastIndexOf(']');
-  if (firstObject >= 0 && lastObject > firstObject) candidates.push(cleaned.slice(firstObject, lastObject + 1));
-  if (firstArray >= 0 && lastArray > firstArray) candidates.push(cleaned.slice(firstArray, lastArray + 1));
-  let parsedJson = false;
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      parsedJson = true;
-      const cues = findCueArray(parsed);
-      if (cues) return cues;
-    } catch {}
-  }
-  if (parsedJson) return undefined;
+function throwInvalidJson() {
   const error = new Error('AI 回傳內容不是有效 JSON');
   error.code = 'invalid_json';
   throw error;
 }
 
+function throwMissingCues() {
+  const error = new Error('AI 回傳缺少 cues 陣列');
+  error.code = 'missing_cues';
+  throw error;
+}
+
+function parseCompletionContent(result) {
+  const rawContent = result?.choices?.[0]?.message?.content;
+  const content = contentToText(rawContent);
+  if (!content.trim() && (!rawContent || typeof rawContent !== 'object')) throw new Error('AI 未回傳字幕內容');
+
+  let parsedJson = Boolean(rawContent && typeof rawContent === 'object' && !Array.isArray(rawContent));
+  const directCues = findCueArray(rawContent, false);
+  if (directCues) return directCues;
+
+  const fragments = contentToTextFragments(rawContent);
+  const candidates = [content, ...fragments];
+  const seenCandidates = new Set();
+  for (const fragment of candidates) {
+    for (const candidate of extractJsonCandidates(fragment)) {
+      if (seenCandidates.has(candidate)) continue;
+      seenCandidates.add(candidate);
+      try {
+        const parsed = JSON.parse(candidate);
+        parsedJson = true;
+        const cues = findCueArray(parsed, true);
+        if (cues) return cues;
+      } catch {}
+    }
+  }
+  if (parsedJson) throwMissingCues();
+  throwInvalidJson();
+}
+
 function validateBatch(source, result, mode = 'proofread', language = 'zh-TW') {
-  if (!Array.isArray(result)) throw new Error('AI 回傳缺少 cues 陣列');
+  if (!Array.isArray(result)) {
+    const error = new Error('AI 回傳缺少 cues 陣列');
+    error.code = 'missing_cues';
+    throw error;
+  }
   if (result.length !== source.length) throw new Error('AI 回傳字幕段落數量不符');
   const sourceById = new Map(source.map((cue) => [String(cue.id), cue]));
   const seen = new Set();
@@ -248,7 +333,7 @@ function canRepairTranslationValidation(error, config) {
 
 function canRepairLocalJson(error, config) {
   if (!['ollama', 'lm-studio'].includes(String(config?.provider || '').toLowerCase())) return false;
-  return error?.code === 'invalid_json' || /AI 回傳內容不是有效 JSON|AI 回傳缺少 cues 陣列/.test(String(error?.message || ''));
+  return ['invalid_json', 'missing_cues'].includes(String(error?.code || ''));
 }
 
 function canRepairOllamaLength(error, config) {
@@ -341,17 +426,14 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
     const sourceLanguageInstruction = isTranslation
       ? '來源字幕可能是繁體中文；請以來源文字為準，不要把翻譯規則或說明文字放進 text。'
       : '繁體中文字幕應保留中文全形標點（例如「。」、「，」、「？」，不要任意改成英文半形標點）。';
+    const responseFormat = buildResponseFormat(config, batch);
     const body = {
       model: config.model,
       operation: mode,
       output_language: outputLanguage,
       subtitle_cue_count: batch.length,
       subtitle_cue_ids: batch.map((cue) => cue.id),
-      ...(config.capabilities?.structuredOutput === 'json-schema'
-        ? { response_format: buildSubtitleSchema(batch.length, batch.map((cue) => cue.id)) }
-        : config.capabilities?.jsonSchema !== false
-          ? { response_format: { type: 'json_object' } }
-          : {}),
+      ...(responseFormat ? { response_format: responseFormat } : {}),
       messages: [
         {
           role: 'system',
