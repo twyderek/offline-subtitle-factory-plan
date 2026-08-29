@@ -37,6 +37,38 @@ const nestedString = await optimizeWithContent({
 }, { provider: 'openai-compatible' });
 assert.equal(nestedString.suggestions[0].text, expectedCue.text, 'nested response string 的 fenced JSON 應解析');
 
+const fencedRootArrayWithProse = '模型回應如下：\n```json\n' + jsonArray + '\n```\n以上。';
+const nestedWrapperCases = [
+  ['response direct array', { response: [expectedCue] }],
+  ['response JSON-stringified array', { response: jsonArray }],
+  ['response fenced root array with prose', { response: fencedRootArrayWithProse }],
+  ['output JSON-stringified array', { output: jsonArray }],
+  ['result JSON-stringified array', { result: jsonArray }],
+  ['data direct array', { data: [expectedCue] }],
+  ['data JSON-stringified array', { data: jsonArray }],
+  ['content JSON-stringified array', { content: jsonArray }],
+  ['message JSON-stringified array', { message: jsonArray }],
+  ['arbitrary nested object array', { metadata: { items: [expectedCue] } }],
+  ['arbitrary nested object JSON-stringified array', { metadata: { items: jsonArray } }],
+];
+
+for (const [label, wrapper] of nestedWrapperCases) {
+  let calls = 0;
+  await assert.rejects(
+    () => optimizeSubtitleCues({
+      cues: source,
+      config: { provider: 'openai-compatible', model: 'test-model', batchSize: 1 },
+      complete: async () => {
+        calls += 1;
+        return { choices: [{ message: { content: wrapper } }] };
+      },
+    }),
+    /AI 回傳缺少 cues 陣列/,
+    `${label} 不得自動視為 cues`,
+  );
+  assert.equal(calls, 1, `${label} 在非本機 provider 上不得 repair`);
+}
+
 let unrelatedArrayCalls = 0;
 await assert.rejects(
   () => optimizeSubtitleCues({
@@ -44,18 +76,11 @@ await assert.rejects(
     config: { provider: 'openai-compatible', model: 'test-model', batchSize: 1 },
     complete: async () => {
       unrelatedArrayCalls += 1;
-      return {
-        choices: [{ message: { content: {
-          data: [expectedCue],
-          response: [expectedCue],
-          content: [{ type: 'text', text: '這不是字幕 cues。' }],
-          message: [expectedCue],
-        } } }],
-      };
+      return { choices: [{ message: { content: { data: [expectedCue], response: [expectedCue], message: [expectedCue] } } }] };
     },
   }),
   /AI 回傳缺少 cues 陣列/,
-  'data、response、content、message 下的陣列不得自動視為 cues',
+  'unrelated nested arrays 不得自動視為 cues',
 );
 assert.equal(unrelatedArrayCalls, 1, '非本機 provider 遇到 unrelated nested arrays 不得 repair');
 
@@ -97,9 +122,39 @@ for (const provider of ['ollama', 'lm-studio']) {
   assert.equal(calls, 2, `${provider} 缺少 cues 時應只 repair 一次`);
   assert.match(requestBodies[1].messages[0].content, /只能輸出一個 JSON object/);
   assert.equal(repaired.suggestions[0].text, expectedCue.text);
+  if (provider === 'lm-studio') {
+    assert.deepEqual(
+      requestBodies[1].response_format,
+      requestBodies[0].response_format,
+      'LM Studio repair 不得覆寫初始 JSON Schema response_format',
+    );
+  }
+}
+
+for (const provider of ['ollama', 'lm-studio']) {
+  let calls = 0;
+  const repaired = await optimizeSubtitleCues({
+    cues: source,
+    config: {
+      provider,
+      model: 'test-model',
+      batchSize: 1,
+      ...(provider === 'lm-studio' ? { capabilities: { jsonSchema: true, structuredOutput: 'json-schema' } } : {}),
+    },
+    complete: async () => {
+      calls += 1;
+      const content = calls === 1
+        ? { response: jsonArray }
+        : jsonObject;
+      return { choices: [{ message: { content } }] };
+    },
+  });
+  assert.equal(calls, 2, `${provider} nested wrapper root array 應只 repair 一次`);
+  assert.equal(repaired.suggestions[0].text, expectedCue.text);
 }
 
 let failedRepairCalls = 0;
+let failedRepairCheckpoint = null;
 await assert.rejects(
   () => optimizeSubtitleCues({
     cues: source,
@@ -108,11 +163,13 @@ await assert.rejects(
       failedRepairCalls += 1;
       return { choices: [{ message: { content: JSON.stringify({ answer: '仍然沒有 cues' }) } }] };
     },
+    onCheckpoint: async (checkpoint) => { failedRepairCheckpoint = checkpoint; },
   }),
   /AI 回傳缺少 cues 陣列/,
   '第二次回應仍缺少 cues 時應失敗',
 );
 assert.equal(failedRepairCalls, 2, 'failed repair 不得超過初次回應加一次 repair');
+assert.equal(failedRepairCheckpoint, null, 'failed repair 不得寫入 completed checkpoint');
 
 let lmStudioBody;
 await optimizeSubtitleCues({

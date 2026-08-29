@@ -158,7 +158,10 @@ function extractJsonCandidates(value) {
   for (let index = 0; index < text.length; index += 1) {
     if (text[index] !== '{' && text[index] !== '[') continue;
     const end = findJsonValueEnd(text, index);
-    if (end > index) add(text.slice(index, end + 1));
+    if (end > index) {
+      add(text.slice(index, end + 1));
+      index = end;
+    }
   }
   return candidates;
 }
@@ -172,7 +175,7 @@ function findCueArray(value, allowRootArray = false, seen = { objects: new Set()
     for (const candidate of extractJsonCandidates(text)) {
       try {
         const parsed = JSON.parse(candidate);
-        const cues = findCueArray(parsed, true, seen);
+        const cues = findCueArray(parsed, allowRootArray, seen);
         if (cues) return cues;
       } catch {}
     }
@@ -217,7 +220,8 @@ function parseCompletionContent(result) {
   if (directCues) return directCues;
 
   const fragments = contentToTextFragments(rawContent);
-  const candidates = [content, ...fragments];
+  const allowRootArray = typeof rawContent === 'string';
+  const candidates = allowRootArray ? [content] : fragments;
   const seenCandidates = new Set();
   for (const fragment of candidates) {
     for (const candidate of extractJsonCandidates(fragment)) {
@@ -226,7 +230,7 @@ function parseCompletionContent(result) {
       try {
         const parsed = JSON.parse(candidate);
         parsedJson = true;
-        const cues = findCueArray(parsed, true);
+        const cues = findCueArray(parsed, allowRootArray);
         if (cues) return cues;
       } catch {}
     }

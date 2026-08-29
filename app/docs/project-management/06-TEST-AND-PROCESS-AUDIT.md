@@ -49,6 +49,12 @@
 
 ## 多語言 LLM 開發中驗證
 
+## AI response parser nested wrapper P1 回歸
+
+- `scripts/test-ai-response-parser.mjs`：驗證 plain／帶前後說明的 Markdown-fenced JSON、text-part arrays、nested explicit `cues` object／string；驗證 top-level message content string 的 root array 仍可接受。
+- 同一測試逐一拒絕 `response`、`output`、`result`、`data`、`content`、`message` 與其他 nested object field 下的 direct／JSON-stringified／fenced root array，並確認非本機 provider 只呼叫一次；Ollama／LM Studio nested wrapper 缺少 cues 時各只 repair 一次。
+- 回歸亦確認 LM Studio repair 保留初始 JSON Schema `response_format`，第二次 repair 仍失敗時不寫入 completed checkpoint；本矩陣不取代真實 Ollama／LM Studio endpoint 與模型品質驗收。
+
 ## 0.46 雙語字幕驗證
 
 - `test-bilingual-subtitles.mjs`：驗證單語 SRT 無損轉為雙欄、原文／譯文排列、SRT／VTT 輸出，以及無效時間碼／空文字拒絕。
