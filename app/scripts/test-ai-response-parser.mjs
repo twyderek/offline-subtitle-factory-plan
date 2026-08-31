@@ -29,8 +29,16 @@ const textParts = await optimizeWithContent([
 ], { provider: 'openai-compatible' });
 assert.equal(textParts.suggestions[0].text, expectedCue.text, 'text-part array 應使用相同 JSON candidate extraction');
 
+const directObject = await optimizeWithContent({ cues: [expectedCue] }, { provider: 'openai-compatible' });
+assert.equal(directObject.suggestions[0].text, expectedCue.text, 'direct cues object 應解析');
+
+for (const field of ['response', 'output', 'result', 'data', 'content', 'message']) {
+  const nestedObject = await optimizeWithContent({ [field]: { cues: [expectedCue] } }, { provider: 'openai-compatible' });
+  assert.equal(nestedObject.suggestions[0].text, expectedCue.text, `${field}.cues explicit object 應解析`);
+}
+
 const nestedObject = await optimizeWithContent({ response: { data: { cues: [expectedCue] } } }, { provider: 'openai-compatible' });
-assert.equal(nestedObject.suggestions[0].text, expectedCue.text, 'nested response object 的 explicit cues 應解析');
+assert.equal(nestedObject.suggestions[0].text, expectedCue.text, 'deeply nested explicit cues 應解析');
 
 const nestedString = await optimizeWithContent({
   response: '模型回應：\n```json\n' + jsonObject + '\n```\n請確認。',
@@ -38,19 +46,14 @@ const nestedString = await optimizeWithContent({
 assert.equal(nestedString.suggestions[0].text, expectedCue.text, 'nested response string 的 fenced JSON 應解析');
 
 const fencedRootArrayWithProse = '模型回應如下：\n```json\n' + jsonArray + '\n```\n以上。';
-const nestedWrapperCases = [
-  ['response direct array', { response: [expectedCue] }],
-  ['response JSON-stringified array', { response: jsonArray }],
-  ['response fenced root array with prose', { response: fencedRootArrayWithProse }],
-  ['output JSON-stringified array', { output: jsonArray }],
-  ['result JSON-stringified array', { result: jsonArray }],
-  ['data direct array', { data: [expectedCue] }],
-  ['data JSON-stringified array', { data: jsonArray }],
-  ['content JSON-stringified array', { content: jsonArray }],
-  ['message JSON-stringified array', { message: jsonArray }],
+const nestedWrapperCases = ['response', 'output', 'result', 'data', 'content', 'message'].flatMap((field) => [
+  [`${field} direct array`, { [field]: [expectedCue] }],
+  [`${field} JSON-stringified array`, { [field]: jsonArray }],
+  [`${field} fenced root array with prose`, { [field]: fencedRootArrayWithProse }],
+]).concat([
   ['arbitrary nested object array', { metadata: { items: [expectedCue] } }],
   ['arbitrary nested object JSON-stringified array', { metadata: { items: jsonArray } }],
-];
+]);
 
 for (const [label, wrapper] of nestedWrapperCases) {
   let calls = 0;
