@@ -1,5 +1,38 @@
 # 改版與工作紀錄
 
+## 2026-08-31 — Offline Subtitle Factory 0.50.1 AI response repair patch release preparation（REL-040）
+
+- 狀態：完成
+- 結案判定：0.50.1 release preparation evidence 與治理 closeout 完成；round2 獨立複審為有條件通過，release preparation PR 可建立；本輪不建立 `v0.50.1` tag／GitHub Release，也不覆蓋既有 `v0.50.0` 資產
+- 審查／交付屬性：release preparation；由 `main` 的 squash merge commit 建立獨立 `codex/release-0.50.1` branch
+- 執行者：Codex
+- 需求來源：需求方要求以 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 開始 0.50.1 patch release preparation，整理 PR #1 的 AI response parser 修正並建立 release PR；明確禁止修改 `v0.50.0` tag／Release、建立 `v0.50.1` tag 或發布 GitHub Release
+- 關聯需求／缺陷：`FR-008`、`FR-010`、`FR-021`、nested wrapper root-array parser P1、`REL-040`
+- 變更等級：發布（版本同步、安裝包設定、Release notes、候選建置與 release PR；不含公開 tag／Release）
+- 執行前已讀：`npm run project:preflight -- --type=release` 列出的固定核心、release／build／test／independent-review／document-closeout 路由，以及有效常設授權 `AUTH-2026-07-23-01`（是）
+- 來源基準：`main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e`；PR #1 已以 squash merge 收斂，`codex/ai-cues-response-repair` 的五個原始 commit 不再次 merge 或 cherry-pick；既有 root-level untracked artifacts 保留且不納入
+- 目標與成功條件：`app/package.json`、`app/package-lock.json` 與目前產品／建置版本來源同步為 `0.50.1`；新增 0.50.1 Release notes；如實記錄 AI response missing cues、Markdown JSON、跨 text parts、nested wrapper root-array、一次 repair、LM Studio schema 保留與 failed checkpoint 行為；完整測試、文件檢查、既有 release／package／installer 驗證與可重現 build 通過；完成獨立六面向審查並建立 release PR 到 `main`
+- 不在範圍：不修改歷史 changelog／既有 0.50.0 Release notes／review evidence 的歷史事實；不修改或重新指向 `v0.50.0` tag／Release 資產；不建立 `v0.50.1` tag；不建立或發布 GitHub Release；不自動合併 release PR；不自動下載大型模型或把字幕資料送至外部雲端 provider
+- 預計影響檔案／模組：`app/package.json`、`app/package-lock.json`、`app/RELEASE-NOTES-0.50.1.md`、`app/README.md`、目前產品／建置 workflow 與必要 runtime／About 版本來源、`docs/project-management/00-CURRENT-STATUS.md`、`04-DEVELOPMENT-HISTORY.md`、`06-TEST-AND-PROCESS-AUDIT.md`、本工作紀錄與獨立 review report
+- 風險與回復方式：版本來源漏改、歷史 0.50.0 被誤改、封裝資產或 metadata 不一致、測試／建置／審查失敗即停止 commit／push／PR；只以新 commit 修正，保留既有 tag／Release 與未追蹤檔案，禁止 destructive cleanup
+- 驗證計畫：版本來源 `rg -n '0.50.0|v0.50.0' .` 與差異分類；指定 node syntax／AI focused tests／`npm ci`／`npm run docs:check`／`npm run check`／`npm run docs:check:final`／`git diff --check`；依 AGENTS 與 release workflow 執行 runtime manifest／verify、installer／package build 可用檢查、封裝內容／checksum／版本核對；檢查 Ollama／LM Studio endpoint 是否存在，未存在時明確標記 `LIVE_PROVIDER_TESTS=NOT_RUN`
+- 授權背景：本輪需求方明確授權建立 release preparation branch、同步版本與文件、執行測試／建置／候選驗證、commit／push 並建立 release PR；本輪未授權建立 `v0.50.1` tag、GitHub Release 或公開安裝資產。若後續公開發布，須另依需求方指示與有效 `AUTH-2026-07-23-01`（僅涵蓋 Windows 未簽章／macOS 未公證）核對並記錄發布風險
+- 實際修改與驗證結果：版本、Release notes、README、狀態／歷程／測試稽核與 Windows 0.50.1 workflow 已更新；`app/.github/workflows/windows-preview.yml` 已補上 `app` job working directory、npm lockfile cache path 與 artifact upload path。`npm ci`、指定 node syntax／AI focused tests、完整 `npm test`／`npm run check`、`npm run docs:check`、runtime manifest／verify、Windows unsigned build、archive／checksum、Setup／Portable／uninstall renderer smoke、`npm run docs:check:final` 與 `git diff --check` 均通過；`LIVE_PROVIDER_TESTS=NOT_RUN`。round1 finding 已由 workflow 修正與 round2 複審收斂。
+- 獨立審查是否執行：是（round1、round2）
+- round1 審查檔案：`docs/project-management/reviews/2026-08-31-0-50-1-release-preparation-round1.md`
+- round1 判定（逐字引用完整結論句）：**REL-040 round1 獨立六面向審查結論為不通過：0.50.1 版本來源、AI parser deterministic regression、runtime manifest 與本地 Windows candidate archive 證據基本齊備，且既有 v0.50.0 tag／Release 未被改動、v0.50.1 tag／Release 尚未建立並如實標示 LIVE_PROVIDER_TESTS=NOT_RUN；但 `app/.github/workflows/windows-preview.yml` 未設定 `app` working directory，乾淨 checkout 下的 `npm ci`、runtime script、build output 與 installer verification 路徑無法成立，`docs:check:final` 亦仍失敗，因此在修正 workflow、完成 changelog／獨立審查 closeout 並取得新的 Windows CI／installer 證據前，不得視為可交付的 0.50.1 release preparation。**
+- round2 審查檔案：`docs/project-management/reviews/2026-08-31-0-50-1-release-preparation-round2.md`
+- round2 判定（逐字引用完整結論句）：**本輪 round2 獨立六面向審查確認 round1 的 Windows workflow working-directory、npm cache dependency path 與 artifact path finding 已修正，本地 0.50.1 candidate、installer／renderer evidence、package／lock 版本、parser regression 與 npm test 均有支持，且 v0.50.0 未變更、v0.50.1 尚未建立、LIVE_PROVIDER_TESTS=NOT_RUN 誠實；但 docs:check:final 仍失敗且未觀察到 GitHub Actions run，因此本結論僅為有條件通過 release-preparation evidence review，不代表 CI 通過、治理 closeout 完成或可公開發布 0.50.1。**
+- round2 條件是否已被需求方接受：是（僅限完成 release preparation、建立 PR 與揭露風險；不代表 CI 通過或授權公開發布；`LIVE_PROVIDER_TESTS=NOT_RUN`、未簽章、未公證與未實機測試均保留為人工驗收風險）
+- 發布授權：
+  - 是否需要：是（本輪為 release preparation／候選封裝與 PR 建立，非公開 Release）
+  - 核准人／角色：需求提出者／產品負責人
+  - 核准時間：2026-08-31（Asia/Taipei）
+  - 核准範圍：需求方明確同意打包、提交、推送及建立 release PR；本輪同步 0.50.1 版本、更新 Release notes／治理文件／Windows workflow 並執行候選驗證；同意將未簽章、未公證、未實機測試與未觀察到 CI 列為公開風險揭露，但不授權建立 `v0.50.1` tag、GitHub Release 或公開發布安裝資產
+- 遺留風險與後續事項：真實 Ollama／LM Studio 模型回應、取消／逾時／checkpoint 端到端行為、Windows 10／11 乾淨實機、Authenticode、macOS notarization 與正式 v0.50.1 資產仍未驗收；GitHub Actions run 未觀察到，不能宣稱 CI 通過。下一步由需求方審查並人工合併 release PR；公開發布前另需實機驗收與新的發布授權
+
+---
+
 ## 2026-08-29 — AI response parser nested wrapper root-array boundary repair
 
 - 狀態：完成

@@ -40,7 +40,8 @@ npm run electron:build:unsigned  # 僅供已明確接受風險的未簽章版本
 - 正式可信發布應配置 `WINDOWS_CODESIGN_PFX_BASE64` 與 `WINDOWS_CODESIGN_PASSWORD`。
 - 未簽章發布必須在 Release notes、狀態檔與交付說明標示 Unknown Publisher／SmartScreen，並附 SHA。
 - Setup、Portable、blockmap、`latest.yml` 的檔名必須彼此一致；上傳後需重新核對 GitHub 實際資產名稱。
-- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；封裝必須包含 `docs/BREEZE-ASR-25.md` 與 0.50.0 Release notes，並維持 Whisper.cpp Tiny 為預設可用路徑。
+- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；目前 0.50.1 候選封裝必須包含 `docs/BREEZE-ASR-25.md` 與 `RELEASE-NOTES-0.50.1.md`，並維持 Whisper.cpp Tiny 為預設可用路徑。0.50.0 Release notes 仍作為歷史文件保留。
+- 0.50.1 候選 build 使用明確 GitHub publish config 產生本機 `latest.yml`／`app-update.yml` metadata；release preparation 指令一律使用 `--publish never`，不得因 metadata 生成而上傳或建立 GitHub Release。
 
 ### Breeze managed runtime build（開發者／CI only）
 
