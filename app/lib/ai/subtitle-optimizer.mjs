@@ -97,6 +97,12 @@ function buildTextLengthInstruction(batch) {
 import { buildGlossaryInstruction } from './project-tools.mjs';
 import { canonicalizeLanguageTag, languagePromptInstruction } from './languages.mjs';
 
+function isTextPart(value) {
+  return typeof value === 'string'
+    || (value && typeof value === 'object' && typeof value.type === 'string'
+      && (typeof value.text === 'string' || typeof value.content === 'string'));
+}
+
 function contentToTextFragments(content, fragments = [], seen = new Set()) {
   if (typeof content === 'string') {
     fragments.push(content);
@@ -104,7 +110,21 @@ function contentToTextFragments(content, fragments = [], seen = new Set()) {
   }
   if (!content || typeof content !== 'object' || seen.has(content)) return fragments;
   seen.add(content);
-  for (const nested of Array.isArray(content) ? content : Object.values(content)) {
+  if (isTextPart(content)) {
+    fragments.push(typeof content.text === 'string' ? content.text : content.content);
+    return fragments;
+  }
+  if (Array.isArray(content)) {
+    for (const nested of content) {
+      if (isTextPart(nested)) {
+        fragments.push(typeof nested === 'string' ? nested : (typeof nested.text === 'string' ? nested.text : nested.content));
+      } else {
+        contentToTextFragments(nested, fragments, seen);
+      }
+    }
+    return fragments;
+  }
+  for (const nested of Object.values(content)) {
     contentToTextFragments(nested, fragments, seen);
   }
   return fragments;
@@ -221,7 +241,8 @@ function parseCompletionContent(result) {
 
   const fragments = contentToTextFragments(rawContent);
   const allowRootArray = typeof rawContent === 'string';
-  const candidates = allowRootArray ? [content] : fragments;
+  const isTextPartContent = Array.isArray(rawContent) && rawContent.every(isTextPart);
+  const candidates = allowRootArray || isTextPartContent ? [content] : fragments;
   const seenCandidates = new Set();
   for (const fragment of candidates) {
     for (const candidate of extractJsonCandidates(fragment)) {

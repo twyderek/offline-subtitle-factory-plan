@@ -29,6 +29,25 @@ const textParts = await optimizeWithContent([
 ], { provider: 'openai-compatible' });
 assert.equal(textParts.suggestions[0].text, expectedCue.text, 'text-part array 應使用相同 JSON candidate extraction');
 
+const splitTextParts = await optimizeSubtitleCues({
+  cues: [
+    { id: 'C1', text: '第一原始字幕' },
+    { id: 'C2', text: '第二原始字幕' },
+  ],
+  config: { provider: 'openai-compatible', model: 'test-model', batchSize: 2 },
+  complete: async () => ({ choices: [{ message: { content: [
+    { type: 'text', text: '{"cues":[{"id":"C1","text":"第一修正","reason":"one"},' },
+    { type: 'text', text: '{"id":"C2","text":"第二修正","reason":"two"}]}' },
+  ] } }] }),
+});
+assert.deepEqual(splitTextParts.suggestions.map((cue) => cue.id), ['C1', 'C2'], '跨 text parts 的 JSON 應依原順序組合解析');
+
+await assert.rejects(
+  () => optimizeWithContent([{ type: 'text', text: jsonArray }], { provider: 'openai-compatible' }),
+  /AI 回傳缺少 cues 陣列/,
+  'text-part 容器的 root array 仍不得視為 cues',
+);
+
 const directObject = await optimizeWithContent({ cues: [expectedCue] }, { provider: 'openai-compatible' });
 assert.equal(directObject.suggestions[0].text, expectedCue.text, 'direct cues object 應解析');
 
