@@ -99,7 +99,7 @@ import { canonicalizeLanguageTag, languagePromptInstruction } from './languages.
 
 function isTextPart(value) {
   return typeof value === 'string'
-    || (value && typeof value === 'object' && typeof value.type === 'string'
+    || (value && typeof value === 'object'
       && (typeof value.text === 'string' || typeof value.content === 'string'));
 }
 

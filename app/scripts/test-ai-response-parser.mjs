@@ -42,6 +42,12 @@ const splitTextParts = await optimizeSubtitleCues({
 });
 assert.deepEqual(splitTextParts.suggestions.map((cue) => cue.id), ['C1', 'C2'], '跨 text parts 的 JSON 應依原順序組合解析');
 
+const contentFieldParts = await optimizeWithContent([
+  { content: '{"cues":[{' },
+  { content: '"id":"C1","text":"content part","reason":"content"}]}' },
+], { provider: 'openai-compatible' });
+assert.equal(contentFieldParts.suggestions[0].text, 'content part', '沒有 type 的 content text parts 也應依序組合解析');
+
 await assert.rejects(
   () => optimizeWithContent([{ type: 'text', text: jsonArray }], { provider: 'openai-compatible' }),
   /AI 回傳缺少 cues 陣列/,
