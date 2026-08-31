@@ -1,5 +1,34 @@
 # 改版與工作紀錄
 
+## 2026-08-29 — AI response parser nested wrapper root-array boundary repair
+
+- 狀態：完成
+- 審查／交付屬性：development；只修正既有 `codex/ai-cues-response-repair` branch 的 AI response parser 與 regression coverage，不建立 PR、不合併、不建立 tag／Release
+- 執行者：Codex
+- 需求來源：需求方要求延續既有 parser P1 修正，讓 root JSON array 僅在原始 `choices[0].message.content` 為字串時接受；所有 nested wrapper array 僅能透過明確 `cues` 接受
+- 關聯需求／缺陷：`FR-008`、`FR-010`、`FR-021`、nested wrapper root-array parser P1
+- 變更等級：一般（AI parser、測試與治理文件；不升版、不發布）
+- 執行前已讀：`app/AGENTS.md`、`docs/project-management/README.md`、`00-CURRENT-STATUS.md`、`02-REQUIREMENTS-ANALYSIS.md`、`03-FUNCTIONAL-DESIGN.md`、`06-TEST-AND-PROCESS-AUDIT.md`、development／test／independent-review／document-closeout workflows，以及本文件最新條目（是）
+- 來源基準：branch `codex/ai-cues-response-repair`、版本 `0.50.0`；工作樹含既有 root-level untracked artifacts，本輪保留且不納入；既有 parser 修正已存在，尚待修正 nested string context
+- 目標與成功條件：保留 shared JSON candidate extraction／balanced bracket parsing；只有原始 top-level message content string 的 root array 可接受；`response`、`output`、`result`、`data`、`content`、`message` 與其他 nested object field 下的 direct／serialized／fenced／prose array 均拒絕，明確 `cues` 仍接受；Ollama／LM Studio 恰好一次 repair、非本機一次 strict failure、schema response_format 與 failed checkpoint regression 通過
+- 不在範圍：不修改 provider／server／package manifest；不 bump `0.50.0`；不建立 tag／Release；不建立新 branch／PR；不合併；不納入既有 untracked build／runtime artifacts
+- 預計影響檔案／模組：`lib/ai/subtitle-optimizer.mjs`、`scripts/test-ai-response-parser.mjs`、`03-FUNCTIONAL-DESIGN.md`、`06-TEST-AND-PROCESS-AUDIT.md`、本工作紀錄與獨立 review report
+- 風險與回復方式：若 candidate context 傳遞錯誤可能誤接受 wrapper array 或破壞 nested explicit cues；以每個 wrapper 的 direct／serialized／fenced negative cases、local／non-local repair count、schema equality 與 checkpoint assertion 回歸；失敗時停止 commit/push
+- 驗證計畫：需求方指定的兩項 `node --check`、`test-ai-response-parser`、`test-ai-optimizer`、`test-ai-providers`、`test-ollama-batch-stream`、`test-ai-fetch`、`npm run docs:check`、`npm run check`、`git diff --check`，另執行 `npm run docs:check:final` 與獨立六面向 review
+- 實際修改：`lib/ai/subtitle-optimizer.mjs` 將 root-array acceptance context 綁定原始 `message.content` 字串，保留 shared JSON candidate extraction／balanced bracket parsing，避免 nested wrapper candidates 被當成 cues；`scripts/test-ai-response-parser.mjs` 新增各 wrapper direct／serialized／fenced-prose negative cases、Ollama／LM Studio nested-wrapper repair、non-local strict failure、LM Studio schema equality 與 failed-repair checkpoint regressions；同步更新功能設計、測試稽核與本工作紀錄。未修改 package manifest，版本維持 `0.50.0`。
+- 開發驗證結果：`node --check lib/ai/subtitle-optimizer.mjs`、`node --check scripts/test-ai-response-parser.mjs`、`node scripts/test-ai-response-parser.mjs`、`node scripts/test-ai-optimizer.mjs`、`node scripts/test-ai-providers.mjs`、`node scripts/test-ollama-batch-stream.mjs`、`node scripts/test-ai-fetch.mjs`、`npm run docs:check`、`npm run check`、`npm run docs:check:final`、`git diff --check` 均通過；完整 `npm run check` 的所有 npm tests 與核心回歸均通過。
+- 獨立審查是否執行：是（round1）
+- 獨立審查結論：
+  - round1 審查檔案：`docs/project-management/reviews/2026-08-29-ai-response-parser-nested-wrapper-round1.md`
+  - round1 判定（逐字引用完整結論句）：**本輪 AI response parser P1 功能與指定回歸均通過；在主要代理完成 08-CHANGE-LOG 結案欄位並使 docs:check:final 通過前，本報告判定為有條件通過。**
+  - round1 條件處理：已完成本條目結案欄位並重跑 `npm run docs:check:final` 通過；保留原始報告與其有條件通過文字，不覆寫審查證據。
+  - 條件是否已被需求方接受：是（條件為本輪治理結案動作，已完成並由 `docs:check:final` 證實；不涉及發布風險接受）
+- 發布授權：不適用（本輪不升版、不建立 tag／Release、不發布）
+- 實際修改與交付結果：parser、回歸測試與治理文件已完成；本輪不升版、不建立 tag／Release、不建立新 PR、不合併；只提交並推送既有 `codex/ai-cues-response-repair` branch。
+- 遺留風險與後續事項：本輪證據是 deterministic mock／contract tests，不取代真實 Ollama／LM Studio 模型品質、網路隔離、取消與 checkpoint persistence 的端到端驗收；既有 untracked build/runtime artifacts 未納入本輪交付。
+
+---
+
 ## 2026-08-25 — Windows Breeze Managed Runtime 0.50.0 正式版本發布（REL-039）
 
 - 狀態：完成
