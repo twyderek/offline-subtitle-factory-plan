@@ -24,6 +24,7 @@ import { aiEndpointPrivacy, isLocalAiProvider, isLoopbackAiUrl, localAiCandidate
 import { inspectModelCapabilities } from './lib/ai/model-capabilities.mjs';
 import { glossaryToCsv, normalizeProjectAiSettings, parseGlossaryCsv } from './lib/ai/project-tools.mjs';
 import { canonicalizeLanguageTag, normalizeLanguageTag } from './lib/ai/languages.mjs';
+import { AI_PROVIDER_MIGRATION_NOTICE, isDiscontinuedAiProvider, migrateAiSecrets, migrateAiSettings, migrateAppSettings } from './lib/ai/provider-migration.mjs';
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(appDir, 'public');
@@ -39,7 +40,11 @@ const settingsDir = process.env.OFFLINE_SUBTITLE_SETTINGS_DIR
 const settingsPath = path.join(settingsDir, 'settings.json');
 const aiSecretsPath = path.join(settingsDir, 'ai-secrets.json');
 let runtimeAiKeys = (() => {
-  try { return JSON.parse(process.env.SUBTITLE_AI_KEYS_JSON || '{}'); } catch { return {}; }
+  try {
+    const keys = JSON.parse(process.env.SUBTITLE_AI_KEYS_JSON || '{}');
+    if (keys && typeof keys === 'object') delete keys['lm-studio'];
+    return keys && typeof keys === 'object' ? keys : {};
+  } catch { return {}; }
 })();
 const port = Number(process.env.PORT || 8790);
 const apiToken = process.env.OFFLINE_SUBTITLE_API_TOKEN || '';
@@ -163,6 +168,7 @@ const defaultSettings = {
     apiVersion: '2024-12-01-preview',
     consentGrantedAt: '',
     profiles: {},
+    migrationNotice: '',
     instructions: '修正錯字與標點，保留原意；專有名詞使用一致寫法，不確定的內容不要自行補寫。',
   },
 };
@@ -427,8 +433,16 @@ function normalizeFolder(value) {
 
 function loadSettings() {
   try {
-    if (!fs.existsSync(settingsPath)) return { ...defaultSettings };
-    return normalizeSettings(readJson(settingsPath));
+    if (!fs.existsSync(settingsPath)) {
+      migrateStoredAiSecrets(false);
+      return { ...defaultSettings };
+    }
+    const raw = readJson(settingsPath);
+    const migration = migrateAppSettings(raw);
+    const normalized = normalizeSettings(migration.settings);
+    migrateStoredAiSecrets(isDiscontinuedAiProvider(raw?.ai?.provider));
+    if (migration.migrated) writeJson(settingsPath, normalized);
+    return normalized;
   } catch {
     return { ...defaultSettings };
   }
@@ -445,32 +459,52 @@ function normalizeSettings(value = {}) {
 }
 
 function normalizeAiSettings(value = {}) {
-  const provider = isSupportedProvider(value.provider) ? value.provider : defaultSettings.ai.provider;
+  const migrated = migrateAiSettings(value).settings;
+  const hasExplicitProvider = Object.hasOwn(migrated, 'provider');
+  const requestedProvider = String(migrated.provider || '').trim();
+  const provider = hasExplicitProvider && !requestedProvider
+    ? ''
+    : (isSupportedProvider(requestedProvider) ? requestedProvider : defaultSettings.ai.provider);
   const providerDefaultBaseUrl = PROVIDER_DEFAULT_BASE_URLS[provider] ?? defaultSettings.ai.baseUrl;
-  const localProvider = isLocalAiProvider(provider);
-  let baseUrl = String(Object.hasOwn(value, 'baseUrl') ? value.baseUrl : providerDefaultBaseUrl).trim().replace(/\/+$/, '');
-  let model = String(value.model || '').trim();
+  const localProvider = Boolean(provider) && isLocalAiProvider(provider);
+  let baseUrl = String(Object.hasOwn(migrated, 'baseUrl') ? migrated.baseUrl : providerDefaultBaseUrl).trim().replace(/\/+$/, '');
+  let model = String(migrated.model || '').trim();
   const looksLikeGeminiSetting = /generativelanguage\.googleapis\.com/i.test(baseUrl) || /(^|[-_.])gemini([-.0-9]|$)/i.test(model);
   if (provider === 'openai-compatible' && looksLikeGeminiSetting) {
     baseUrl = providerDefaultBaseUrl;
     model = '';
   }
+  if (!provider) {
+    baseUrl = '';
+    model = '';
+  }
+  const profiles = migrated.profiles && typeof migrated.profiles === 'object' ? { ...migrated.profiles } : {};
+  delete profiles['lm-studio'];
   return {
-    enabled: Boolean(value.enabled),
+    enabled: Boolean(provider) && Boolean(migrated.enabled),
     provider,
     baseUrl,
     model,
-    batchSize: clampNumber(value.batchSize, 1, localProvider ? 20 : 100, localProvider ? 8 : defaultSettings.ai.batchSize),
-    language: normalizeLanguageTag(value.language, defaultSettings.ai.language),
-    timeoutSeconds: clampNumber(value.timeoutSeconds, 10, 300, defaultSettings.ai.timeoutSeconds),
-    maxRetries: clampNumber(value.maxRetries, 0, 8, defaultSettings.ai.maxRetries),
-    retryBaseMs: clampNumber(value.retryBaseMs, 100, 10000, defaultSettings.ai.retryBaseMs),
-    deployment: String(value.deployment || '').trim(),
-    apiVersion: String(value.apiVersion || defaultSettings.ai.apiVersion).trim(),
-    consentGrantedAt: String(value.consentGrantedAt || '').trim(),
-    profiles: value.profiles && typeof value.profiles === 'object' ? value.profiles : {},
-    instructions: String(value.instructions || defaultSettings.ai.instructions).trim(),
+    batchSize: clampNumber(migrated.batchSize, 1, localProvider ? 20 : 100, localProvider ? 8 : defaultSettings.ai.batchSize),
+    language: normalizeLanguageTag(migrated.language, defaultSettings.ai.language),
+    timeoutSeconds: clampNumber(migrated.timeoutSeconds, 10, 300, defaultSettings.ai.timeoutSeconds),
+    maxRetries: clampNumber(migrated.maxRetries, 0, 8, defaultSettings.ai.maxRetries),
+    retryBaseMs: clampNumber(migrated.retryBaseMs, 100, 10000, defaultSettings.ai.retryBaseMs),
+    deployment: String(migrated.deployment || '').trim(),
+    apiVersion: String(migrated.apiVersion || defaultSettings.ai.apiVersion).trim(),
+    consentGrantedAt: String(migrated.consentGrantedAt || '').trim(),
+    profiles,
+    migrationNotice: String(migrated.migrationNotice || '').trim(),
+    instructions: String(migrated.instructions || defaultSettings.ai.instructions).trim(),
   };
+}
+
+function migrateStoredAiSecrets(removeLegacyApiKey = false) {
+  const current = readAiSecrets();
+  const migration = migrateAiSecrets(current, { removeLegacyApiKey });
+  if (!migration.migrated) return;
+  if (Object.keys(migration.secrets).length) writeJson(aiSecretsPath, migration.secrets);
+  else if (fs.existsSync(aiSecretsPath)) fs.unlinkSync(aiSecretsPath);
 }
 
 function readAiSecrets() {
@@ -478,6 +512,7 @@ function readAiSecrets() {
 }
 
 function readAiApiKey(provider = appSettings.ai.provider) {
+  if (!provider || isDiscontinuedAiProvider(provider)) return '';
   const environmentKey = String(process.env.SUBTITLE_AI_API_KEY || '').trim();
   if (environmentKey) return environmentKey;
   if (runtimeAiKeys[provider]) return runtimeAiKeys[provider];
@@ -487,7 +522,7 @@ function readAiApiKey(provider = appSettings.ai.provider) {
 
 function saveAiApiKey(apiKey, provider = appSettings.ai.provider) {
   const value = String(apiKey || '').trim();
-  if (!value) return;
+  if (!value || !isSupportedProvider(provider)) return;
   runtimeAiKeys[provider] = value;
   const secrets = readAiSecrets();
   writeJson(aiSecretsPath, { providers: { ...(secrets.providers || {}), [provider]: value } });
@@ -505,14 +540,20 @@ function clearAiApiKey(provider = appSettings.ai.provider) {
 
 function publicAiSettings() {
   const provider = appSettings.ai.provider;
-  const { profiles, ...settings } = appSettings.ai;
+  const migrationNotice = appSettings.ai.migrationNotice || '';
+  const { profiles, migrationNotice: _migrationNotice, ...settings } = appSettings.ai;
+  if (migrationNotice) {
+    appSettings = { ...appSettings, ai: { ...appSettings.ai, migrationNotice: '' } };
+    writeJson(settingsPath, appSettings);
+  }
   const privacy = aiEndpointPrivacy(settings.baseUrl);
   return {
     ...settings,
+    migrationNotice,
     endpointPrivacy: privacy,
     requiresApiKey: privacy !== 'local',
     hasApiKey: Boolean(readAiApiKey(provider)),
-    keySource: process.env.SUBTITLE_AI_API_KEY ? 'environment' : (runtimeAiKeys[provider] ? 'runtime' : (readAiApiKey(provider) ? 'encrypted-or-legacy' : 'none')),
+    keySource: !provider ? 'none' : (process.env.SUBTITLE_AI_API_KEY ? 'environment' : (runtimeAiKeys[provider] ? 'runtime' : (readAiApiKey(provider) ? 'encrypted-or-legacy' : 'none'))),
     providers: listProviderDefinitions(),
   };
 }
@@ -689,6 +730,7 @@ function startAiOptimizationJob(job, payload, previous = null) {
   const jobId = job.config.jobId;
   const config = aiProviderConfig();
   if (!config.enabled) throw new Error('AI 字幕優化尚未啟用');
+  if (!isSupportedProvider(config.provider)) throw new Error('請先選擇受支援的 AI 供應商');
   if (!config.model) throw new Error('AI 模型尚未設定');
   if (!config.apiKey && !isLoopbackAiUrl(config.baseUrl)) throw new Error('AI API Key 尚未設定');
   if (config.provider === 'azure' && !config.deployment) throw new Error('Azure Deployment 尚未設定');
@@ -1206,6 +1248,14 @@ function cancelBreezeModelDownload() {
     breezeModelDownloadJob.controller?.abort(new Error('使用者取消 Breeze ASR 25 模型下載'));
   }
   return breezeModelDownloadJob;
+}
+
+function publicAppSettings() {
+  const migrationNotice = appSettings.ai?.migrationNotice || '';
+  if (!migrationNotice) return { ...appSettings };
+  appSettings = { ...appSettings, ai: { ...appSettings.ai, migrationNotice: '' } };
+  writeJson(settingsPath, appSettings);
+  return { ...appSettings, ai: { ...appSettings.ai, migrationNotice } };
 }
 
 function refreshBreezePythonPath() {
@@ -3984,7 +4034,7 @@ async function handleApi(req, res) {
   }
   if (req.method === 'GET' && url.pathname === '/api/settings') {
     sendJson(res, 200, {
-      ...appSettings,
+      ...publicAppSettings(),
       settingsFile: settingsPath,
       projectFolder: getJobsDir(),
     });
@@ -3993,7 +4043,9 @@ async function handleApi(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/settings') {
     try {
       const payload = await readJsonBody(req);
-      if (payload.ai && Object.hasOwn(payload.ai, 'provider') && !isSupportedProvider(payload.ai.provider)) {
+      if (payload.ai && Object.hasOwn(payload.ai, 'provider')
+        && !isSupportedProvider(payload.ai.provider)
+        && !(typeof payload.ai.provider === 'string' && !payload.ai.provider.trim())) {
         throw new Error(`不支援的 AI 供應商：${payload.ai.provider || ''}`);
       }
       if (payload.ai && Object.hasOwn(payload.ai, 'language')) canonicalizeLanguageTag(payload.ai.language);
@@ -4011,7 +4063,12 @@ async function handleApi(req, res) {
     return;
   }
   if (req.method === 'GET' && url.pathname === '/api/ai/profile') {
-    const provider = url.searchParams.get('provider') || appSettings.ai.provider;
+    const requestedProvider = url.searchParams.get('provider');
+    const provider = requestedProvider === null ? appSettings.ai.provider : requestedProvider;
+    if (typeof provider === 'string' && !provider.trim()) {
+      sendJson(res, 200, { ok: true, provider: '', profile: {}, hasApiKey: false, capabilities: null });
+      return;
+    }
     if (!isSupportedProvider(provider)) {
       sendJson(res, 400, { ok: false, error: `不支援的 AI 供應商：${provider}` });
       return;
@@ -4022,17 +4079,21 @@ async function handleApi(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/ai/settings') {
     try {
       const payload = await readJsonBody(req);
-      if (!isSupportedProvider(payload.provider)) throw new Error(`不支援的 AI 供應商：${payload.provider || ''}`);
+      const unselected = typeof payload.provider === 'string' && !payload.provider.trim();
+      if (!isSupportedProvider(payload.provider) && !unselected) throw new Error(`不支援的 AI 供應商：${payload.provider || ''}`);
       if (Object.hasOwn(payload, 'language')) canonicalizeLanguageTag(payload.language);
       const nextAi = normalizeAiSettings(payload);
+      if (!nextAi.provider && nextAi.enabled) throw new Error('請先選擇受支援的 AI 供應商');
       if (nextAi.enabled && (!nextAi.baseUrl || !nextAi.model)) throw new Error('啟用 AI 前必須填寫 Base URL 與模型名稱');
       if (nextAi.enabled && nextAi.provider === 'azure' && !nextAi.deployment) throw new Error('啟用 Azure OpenAI 前必須填寫 Azure Deployment');
       if (nextAi.baseUrl) new URL(nextAi.baseUrl);
       const profiles = { ...(appSettings.ai.profiles || {}), ...(payload.profiles || {}) };
-      profiles[nextAi.provider] = {
-        baseUrl: nextAi.baseUrl, model: nextAi.model, deployment: nextAi.deployment,
-        apiVersion: nextAi.apiVersion, batchSize: nextAi.batchSize, timeoutSeconds: nextAi.timeoutSeconds,
-      };
+      if (nextAi.provider) {
+        profiles[nextAi.provider] = {
+          baseUrl: nextAi.baseUrl, model: nextAi.model, deployment: nextAi.deployment,
+          apiVersion: nextAi.apiVersion, batchSize: nextAi.batchSize, timeoutSeconds: nextAi.timeoutSeconds,
+        };
+      }
       nextAi.profiles = profiles;
       appSettings = { ...appSettings, ai: nextAi };
       writeJson(settingsPath, appSettings);
@@ -4072,6 +4133,7 @@ async function handleApi(req, res) {
   if (req.method === 'GET' && url.pathname === '/api/ai/models') {
     try {
       const config = aiProviderConfig();
+      if (!isSupportedProvider(config.provider)) throw new Error('請先選擇受支援的 AI 供應商');
       if (!config.baseUrl) throw new Error('請先儲存 API Base URL');
       const models = await createProvider(config).listModels();
       sendJson(res, 200, {
@@ -4087,6 +4149,7 @@ async function handleApi(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/ai/capabilities') {
     try {
       const config = aiProviderConfig();
+      if (!isSupportedProvider(config.provider)) throw new Error('請先選擇受支援的 AI 供應商');
       if (!config.baseUrl || !config.model) throw new Error('請先儲存 Base URL 與模型名稱');
       const capabilities = await inspectModelCapabilities(config, createProvider(config));
       sendJson(res, 200, {
@@ -4102,6 +4165,7 @@ async function handleApi(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/ai/test') {
     try {
       const config = aiProviderConfig();
+      if (!isSupportedProvider(config.provider)) throw new Error('請先選擇受支援的 AI 供應商');
       if (!config.baseUrl || !config.model) throw new Error('請先儲存 Base URL 與模型名稱');
       const result = await createProvider(config).test();
       sendJson(res, 200, { ok: true, ...result });

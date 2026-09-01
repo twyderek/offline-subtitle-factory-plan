@@ -5,6 +5,8 @@
 > 目標版本：0.50.0  
 > 目標定位：把 0.40 的雲端 AI 字幕優化 MVP 推進為可恢復、可稽核、可撤銷，並正式支援本機 LLM 的穩定版本。
 
+> 歷史規劃註記（2026-09-01）：本文件的 0.48 LM Studio 內容是歷史規劃，不代表目前產品支援。0.51.0 candidate 已移除 LM Studio active provider；目前官方本機 provider 為 Ollama，`openai-compatible` 僅是通用 transport。
+
 ## 一、執行原則
 
 1. AI 功能維持預設停用，原有 Whisper、修剪、校閱與輸出必須可完全離線運作。
@@ -129,11 +131,11 @@
 - 低可信片段可重現篩選，且不會自動修改高可信字幕。
 - 品質指標缺失時不偽造 confidence。
 
-### 0.48.0：本機 LLM 基礎支援
+### 0.48.0：本機 LLM 基礎支援（歷史；LM Studio 已停止維護）
 
 目標：提供不將字幕傳出電腦的 AI 優化方案。
 
-- 支援 Ollama 與 LM Studio 的 OpenAI-compatible 本機端點。
+- 歷史上支援 Ollama 與 LM Studio 的 OpenAI-compatible 本機端點；0.51.0 已移除 LM Studio active provider。
 - 自動偵測常見 localhost 端點並列出模型。
 - 提供本機／雲端狀態標示與隱私差異。
 - 模型能力檢查：context 長度、JSON 輸出及繁體中文品質。
@@ -142,7 +144,7 @@
 
 完成條件：
 
-- Ollama 與 LM Studio 各完成至少一個模型的端到端測試。
+- 歷史驗證曾涵蓋兩種本機服務；目前回歸重點為 Ollama，LM Studio 不再是支援目標。
 - 斷網狀態可完成本機字幕優化。
 
 ### 0.49.0：跨平台 Beta 與效能硬化
@@ -205,4 +207,4 @@
 
 ## 五、近期下一步
 
-0.41～0.47 已完成並以 0.47.1 修正版公開；目前進入 0.48.0 本機 LLM 基礎支援。先完成 loopback 安全分類、Ollama／LM Studio provider、模型探索與自動測試，再以兩種服務各至少一個模型完成端到端及斷網驗證。
+0.41～0.47 已完成並以 0.47.1 修正版公開；0.48 的本機 LLM 規劃已成為歷史。下一個 active candidate 為 0.51.0：移除 LM Studio、保留 Ollama、完成舊設定安全 migration 與 provider/parser 回歸，再由需求方另行核准發布。

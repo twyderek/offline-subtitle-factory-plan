@@ -4,11 +4,6 @@ export const LOCAL_AI_PROVIDERS = Object.freeze({
     baseUrl: 'http://127.0.0.1:11434/v1',
     defaultBatchSize: 8,
   },
-  'lm-studio': {
-    label: 'LM Studio',
-    baseUrl: 'http://127.0.0.1:1234/v1',
-    defaultBatchSize: 8,
-  },
 });
 
 export const LOCAL_AI_PROVIDER_IDS = Object.freeze(Object.keys(LOCAL_AI_PROVIDERS));

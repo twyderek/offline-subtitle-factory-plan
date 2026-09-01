@@ -19,7 +19,6 @@ const timeoutSeconds = Number(process.env.OSF_TIMEOUT_SECONDS || readArg('--time
 if (process.env.OSF_ACCEPT_EXTERNAL !== '1') throw new Error('真實端點驗收必須明確設定 OSF_ACCEPT_EXTERNAL=1');
 if (!outputPath) throw new Error('Usage: OSF_ACCEPT_EXTERNAL=1 OSF_PROVIDER=groq ... node scripts/probe-provider-live.mjs --output <json>');
 if (!isSupportedProvider(providerId)) throw new Error(`不支援的 provider：${providerId || '(未設定)'}`);
-if (providerId === 'lm-studio') throw new Error('LM Studio 依目前需求暫緩，不執行真實端點驗收');
 if (!baseUrl) throw new Error('OSF_BASE_URL 必須設定');
 if (!model && providerId !== 'azure') throw new Error('OSF_MODEL 必須設定');
 if (providerId === 'azure' && !deployment) throw new Error('Azure 真實端點必須設定 OSF_DEPLOYMENT');

@@ -1,8 +1,11 @@
+import { AI_PROVIDER_MIGRATION_NOTICE, migrateImportedProject, migrateLegacyAiLocalStorage } from './ai-provider-settings.mjs';
+
 // API base URL — Web/Electron 都使用目前頁面的本機伺服器
 const API_BASE = window.location.origin.startsWith('http')
   ? window.location.origin
   : 'http://127.0.0.1:8790';
 const API_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+const legacyAiStorageMigration = migrateLegacyAiLocalStorage(localStorage);
 const nativeFetch = window.fetch.bind(window);
 window.fetch = (input, init = {}) => {
   const requestUrl = new URL(typeof input === 'string' ? input : input.url, window.location.href);
@@ -1094,7 +1097,9 @@ async function loadAppSettings() {
     currentSettings = settings;
     fillSettingsForm(settings);
     applyInterfaceLanguage(settings.appLanguage);
-    updateSettingsStatus('設定已載入');
+    updateSettingsStatus(settings.ai?.migrationNotice || (legacyAiStorageMigration.migrated
+      ? AI_PROVIDER_MIGRATION_NOTICE
+      : '設定已載入'));
   } catch (error) {
     updateSettingsStatus(`設定載入失敗：${error.message}`);
   }
@@ -1704,6 +1709,7 @@ function setStatus(status) {
   progressNumber.textContent = `${Math.round(progress)}%`;
   progressBar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
   stageName.textContent = stageLabel(status.stage || 'waiting');
+  stageName.dataset.stage = status.stage || 'waiting';
   statusText.textContent = status.message || status.status || '等待開始';
 
   const logs = status.logs?.length ? status.logs : ['等待建立字幕任務'];
@@ -1733,7 +1739,7 @@ function bindProjectMenuControls() {
 
 function collectProjectData() {
   return {
-    appVersion: '0.45.1',
+    appVersion: '0.51.0',
     jobId: currentJobId,
     projectPath: currentProjectPath,
     form: {
@@ -1815,7 +1821,7 @@ async function openProjectFile() {
   try {
     const result = await window.electronAPI.openProjectFile();
     if (!result?.ok) return;
-    await applyProjectData(result.project, result.filePath);
+    await applyProjectData(result.project, result.filePath, result.migrationNotice || '');
   } catch (error) {
     setStatus({
       progress: 0,
@@ -1826,7 +1832,12 @@ async function openProjectFile() {
   }
 }
 
-async function applyProjectData(project, filePath) {
+async function applyProjectData(project, filePath, migrationNotice = '') {
+  const migrated = migrateImportedProject(project);
+  if (migrated.migrated) {
+    project = migrated.project;
+    migrationNotice = migrationNotice || AI_PROVIDER_MIGRATION_NOTICE;
+  }
   clearInterval(pollTimer);
   currentProjectPath = filePath || null;
   currentJobId = project?.jobId || null;
@@ -1849,6 +1860,15 @@ async function applyProjectData(project, filePath) {
       logs: ['此專案尚未建立任務；請重新選擇影片/規則檔後開始字幕生成。'],
     });
     openReview.disabled = true;
+  }
+  if (migrationNotice || legacyAiStorageMigration.migrated) {
+    migrationNotice = migrationNotice || AI_PROVIDER_MIGRATION_NOTICE;
+    setStatus({
+      progress: Number(progressNumber.textContent.replace('%', '')) || 0,
+      stage: currentJobId ? stageName.dataset.stage || 'ready-review' : 'waiting',
+      message: `${migrationNotice} ${statusText.textContent || ''}`.trim(),
+      logs: [migrationNotice, logBox.textContent || ''].filter(Boolean),
+    });
   }
 }
 

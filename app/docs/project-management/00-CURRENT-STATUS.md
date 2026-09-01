@@ -1,21 +1,30 @@
 # 目前專案狀態
 
 > 最後查證日期：2026-09-01
-> 現行版本：0.50.1（AI response repair release preparation candidate）
+> 現行版本：0.51.0（LM Studio removal breaking candidate）
 > 現行公開版本：0.50.0（GitHub Latest）
 > 發布 tag／commit：`v0.50.0` → `44c40225e2b0a39e759048439e3db912b6333ad9`；既有 `v0.49.1` 保留
 > 主分支：`main`
 
-## 0.50.1 AI response repair patch release preparation（REL-040）
+## 0.51.0 LM Studio removal preparation（REL-041）
+
+- 0.50.1 release preparation 已取消／未發布，現由 0.51.0 candidate 取代；不建立 `v0.50.1` tag 或 Release，既有 `v0.50.0` tag、Release 與資產不修改。
+- `app/package.json` 與 `app/package-lock.json` 已同步為 `0.51.0`；Windows workflow、artifact、tag trigger 與 packaged release notes 已同步 0.51.0。
+- 已移除 LM Studio 的 active provider registry、adapter、capabilities、預設 endpoint、UI selector、local discovery 與 LM-only JSON Schema 特例。一般 OpenAI-compatible 仍是通用 transport，不代表官方 LM Studio 支援。
+- 舊設定／專案匯入／瀏覽器 localStorage 中的 LM Studio provider 會被清除並回到未選擇狀態，顯示一次 `LM Studio 已停止支援，相關設定已移除，請重新選擇 AI 供應商。`；不會自動改成 Ollama 或雲端 provider，其他 provider 與 secrets 保留且 migration 可重複執行。
+- Ollama 保留 shared JSON candidate extraction、Markdown-wrapped JSON、text parts 與 nested wrapper root-array 保護；缺少 `cues` 時最多 repair 一次，非本機 provider strict failure，repair 失敗不寫 completed checkpoint。
+- 0.51.0 release notes：`RELEASE-NOTES-0.51.0.md`。本候選尚未建立 tag／GitHub Release；Windows unsigned internal preview 必須持續以未簽章狀態揭露。
+
+## 0.50.1 AI response repair patch release preparation（REL-040，已取消／由 0.51.0 取代）
 
 - Release preparation branch：`codex/release-0.50.1`，由 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 建立；未從 `codex/ai-cues-response-repair` merge 或 cherry-pick。
-- `app/package.json` 與 `app/package-lock.json` 版本同步為 `0.50.1`；About 畫面沿用 `app.getVersion()`，不需要額外硬編碼版本。
-- 本 patch release notes 為 `RELEASE-NOTES-0.50.1.md`，建置設定與 Windows preview workflow 已同步 0.50.1；歷史 `RELEASE-NOTES-0.50.0.md`、changelog、review evidence 與既有資產不改寫。
-- PR #1 已將 AI response parser 修正 squash merge 至 main：支援 Markdown-wrapped JSON、跨 text parts JSON，嚴格拒絕 nested wrapper root arrays；Ollama／LM Studio 最多 repair 一次，LM Studio 保留 JSON Schema `response_format`，repair 失敗不寫入 completed checkpoint。
+- `app/package.json` 與 `app/package-lock.json` 曾同步為 `0.50.1`；該候選未發布，現行產品版本改由 0.51.0 取代。
+- 歷史 patch release notes 曾為 `RELEASE-NOTES-0.50.1.md`，該候選已取消；目前建置設定與 Windows preview workflow 已改指向 0.51.0。歷史 `RELEASE-NOTES-0.50.0.md`、changelog、review evidence 與既有資產不改寫。
+- PR #1 已將 AI response parser 修正 squash merge 至 main；其 response parser 修正由 0.51.0 保留，LM Studio provider 與 LM-only JSON Schema 行為則已移除。
 - `v0.50.1` tag、GitHub Release 與正式安裝資產尚未建立；公開版本仍為 `v0.50.0`，既有 tag／Release 保留不覆蓋。
-- Windows preview workflow 已移至 repository root `.github/workflows/windows-preview.yml`，仍以 `app` 為工作目錄；GitHub Actions run `33459892513` 已成功，job `Windows x64 test and package` 為 `success`，artifact `offline-subtitle-factory-0.50.1-windows-x64` 已上傳。signed build 因無憑證按設計 skipped，unsigned internal preview 已成功；未將 unsigned artifact 描述為正式簽章版本。
+- 歷史 0.50.1 preview workflow 已移至 repository root `.github/workflows/windows-preview.yml` 並成功產生未簽章 internal preview；目前 workflow artifact／tag／檔名已改指向 0.51.0。signed build 因無憑證按設計 skipped，未將 unsigned artifact 描述為正式簽章版本。
 - source focused／完整回歸、文件檢查、runtime manifest／verify、Windows unpacked／unsigned Setup／Portable build、封裝內容／archive／checksum 與 Setup／Portable／uninstall renderer smoke 已通過；round1／round2／round3 獨立審查報告已建立，`docs:check:final` 已通過，release PR 可供需求方審查。
-- 2026-09-01 rerun 修正 Windows CRLF 下治理 parser 的行尾相容性，重新通過指定 node／AI tests、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check`；0.50.1 candidate 的 archive、package／model exclusion、checksum、Setup／Portable／uninstall renderer smoke 亦通過。
+- 歷史 0.50.1 rerun 曾修正 Windows CRLF 下治理 parser 的行尾相容性並通過候選 archive／package／model exclusion／checksum／renderer smoke；該候選不再是目前發布目標。
 - `LIVE_PROVIDER_TESTS=NOT_RUN`：2026-09-01 檢查 `127.0.0.1:11434`（Ollama）與 `127.0.0.1:1234`（LM Studio）均未監聽，亦未發現對應程序；未下載模型、未送出字幕資料，不能視為真實 provider 驗收通過。
 
 ## 0.50.0 Windows Breeze managed runtime 正式發布（REL-039）
@@ -105,7 +114,7 @@
 
 - `AUTH-2026-07-23-01`：需求提出者／產品負責人已統一同意 Windows Authenticode 未簽章、macOS 未經 Apple Developer ID 簽章／公證狀態下對外發布。每次發布仍須引用授權 ID、揭露風險並完成測試、審查、SHA 與資產核對；未實機測試及其他風險不在此授權範圍。詳見 `09-STANDING-AUTHORIZATIONS.md`。
 
-## 0.48.0 正式發布狀態
+## 0.48.0 正式發布狀態（歷史；LM Studio 已停止維護）
 
 1. `FR-021`：新增 Ollama／LM Studio 本機 provider、固定常見端點探測與模型清單。
 2. 只有精確 loopback hostname 才免 API Key 與雲端資料傳送同意；遠端端點維持既有安全門檻。

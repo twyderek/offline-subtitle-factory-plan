@@ -1,13 +1,13 @@
 # 離線字幕工廠
 
-## 0.50.1 AI response repair 修正版準備中
+## 0.51.0 LM Studio 移除修正版準備中
 
-0.50.1 是針對本機 AI 字幕回應缺少 `cues` 的 patch release preparation。此候選版本以 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 為基準，尚未建立 `v0.50.1` tag 或 GitHub Release。
+0.51.0 是未發布的 breaking candidate：移除 LM Studio provider 的 active 支援，並保留 Ollama 的本機 AI response repair。尚未建立 `v0.51.0` tag 或 GitHub Release；0.50.1 release preparation 已取消並由本版取代。
 
-- Release notes：[RELEASE-NOTES-0.50.1.md](RELEASE-NOTES-0.50.1.md)
-- 準備分支：`codex/release-0.50.1`
+- Release notes：[RELEASE-NOTES-0.51.0.md](RELEASE-NOTES-0.51.0.md)
 - 目前公開版本仍為：[v0.50.0](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0)
-- 修正範圍：Markdown-wrapped JSON、跨 text parts JSON、nested wrapper root-array 邊界，以及 Ollama／LM Studio 單次 repair。
+- 舊 LM Studio 設定會安全移除並回到「未選擇 AI 供應商」，不會自動切換到 Ollama 或雲端 provider；其他 provider 與 secrets 保留。
+- Ollama 支援 Markdown-wrapped JSON、跨 text parts JSON、nested wrapper root-array 邊界與缺少 `cues` 時的一次性 repair。一般 OpenAI-compatible 端點仍可用，但不代表官方 LM Studio 支援。
 
 ## 0.50.0 正式發布：Windows Breeze ASR 25 一鍵安裝
 
@@ -49,16 +49,16 @@ Windows x64 使用者首次選擇 Breeze ASR 25 時，App 可從固定 GitHub Re
 
 ## 0.48.0 正式發布
 
-0.48.0 已完成本機 AI 字幕優化、Ollama／LM Studio 設定支援、翻譯原文／譯文分離、雙語顯示開關，以及模型解說文字安全清理。GitHub Release 已正式公開，macOS／Windows 資產與 SHA-256 digest 已核對；目前 Latest 為 v0.49.0。
+0.48.0 歷史上曾加入本機 AI 字幕優化與模型解說文字安全清理；本版的 LM Studio 支援已停止維護並由 0.51.0 migration 移除。GitHub Release 資產仍作為歷史資料保留。
 
 - 正式 Release：[v0.48.0](https://github.com/twyderek/offline-subtitle-factory-app/releases/tag/v0.48.0)
 - macOS Apple Silicon：DMG 與 ZIP。
 - Windows x64：NSIS Setup 與 Portable，另附 `latest.yml`、SHA-256 與未簽章狀態。
 - Windows 與 macOS 均未簽章／未公證；下載後請先核對 SHA-256。
 
-## 0.48.x 本機語言模型設定
+## 目前本機語言模型設定
 
-0.48 支援 Ollama 與 LM Studio 本機端點。安裝、模型建議與設定方式請參考：[本機語言模型設定手冊](docs/LOCAL-LLM-SETUP.md)。
+目前只支援 Ollama 作為官方本機 provider。一般 OpenAI-compatible 端點可由使用者自行設定，但不代表官方 LM Studio 整合；設定方式請參考：[本機語言模型設定手冊](docs/LOCAL-LLM-SETUP.md)。
 
 ## 0.47.1 歷史發布重點
 

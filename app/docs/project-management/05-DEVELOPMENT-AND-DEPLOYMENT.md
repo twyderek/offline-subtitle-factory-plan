@@ -3,6 +3,7 @@
 ## 支援環境
 
 - Node.js 22.12.0 以上；CI 目前使用 Node.js 22。Electron 43 的安裝工具鏈不再支援 Node 20。
+- 目前 unreleased candidate 為 0.51.0；0.50.1 preparation 已取消／由 0.51.0 取代。LM Studio provider 已移除；官方本機 provider 為 Ollama，`openai-compatible` 僅代表通用 transport。
 - 0.50.0 已鎖定 Electron 43.3.0／electron-builder 26.15.7 並作為 Windows Breeze managed runtime 正式 App 版本發布；依賴或版本更新後必須重跑完整 audit、雙平台封裝與 packaged renderer smoke。既有公開 `v0.49.1` 與 runtime Release 資產保留為歷史／獨立版本，不得覆寫。
 - Windows 10/11 x64；封裝由 `windows-2022` runner 執行。
 - Apple Silicon macOS 12 以上。
@@ -40,8 +41,8 @@ npm run electron:build:unsigned  # 僅供已明確接受風險的未簽章版本
 - 正式可信發布應配置 `WINDOWS_CODESIGN_PFX_BASE64` 與 `WINDOWS_CODESIGN_PASSWORD`。
 - 未簽章發布必須在 Release notes、狀態檔與交付說明標示 Unknown Publisher／SmartScreen，並附 SHA。
 - Setup、Portable、blockmap、`latest.yml` 的檔名必須彼此一致；上傳後需重新核對 GitHub 實際資產名稱。
-- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；目前 0.50.1 候選封裝必須包含 `docs/BREEZE-ASR-25.md` 與 `RELEASE-NOTES-0.50.1.md`，並維持 Whisper.cpp Tiny 為預設可用路徑。0.50.0 Release notes 仍作為歷史文件保留。
-- 0.50.1 候選 build 使用明確 GitHub publish config 產生本機 `latest.yml`／`app-update.yml` metadata；release preparation 指令一律使用 `--publish never`，不得因 metadata 生成而上傳或建立 GitHub Release。
+- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；目前 0.51.0 候選封裝必須包含 `docs/BREEZE-ASR-25.md` 與 `RELEASE-NOTES-0.51.0.md`，並維持 Whisper.cpp Tiny 為預設可用路徑。0.50.0 Release notes 仍作為歷史文件保留。
+- 0.51.0 候選 build 使用明確 GitHub publish config 產生本機 `latest.yml`／`app-update.yml` metadata；release preparation 指令一律使用 `--publish never`，不得因 metadata 生成而上傳或建立 GitHub Release。unsigned internal preview 必須明確標示未簽章。
 
 ### Breeze managed runtime build（開發者／CI only）
 

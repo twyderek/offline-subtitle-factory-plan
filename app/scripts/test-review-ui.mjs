@@ -53,7 +53,8 @@ assert.match(js, /state\.aiSuggestions\.clear\(\)[\s\S]{0,120}updateAiSuggestion
 assert.match(html, /<option value="groq">Groq<\/option>/);
 assert.match(html, /<option value="gemini">Google Gemini<\/option>/);
 assert.match(html, /<option value="ollama">Ollama（本機）<\/option>/);
-assert.match(html, /<option value="lm-studio">LM Studio（本機）<\/option>/);
+assert.match(html, /<option value="">未選擇<\/option>/);
+assert.doesNotMatch(html, /value="lm-studio"|LM Studio（本機）/);
 assert.match(html, /id="discoverLocalAi"/);
 assert.match(html, /id="loadAiModels"/);
 assert.match(html, /id="inspectAiModel"/);

@@ -8,7 +8,6 @@ export const PROVIDER_CAPABILITIES = Object.freeze({
   groq: { jsonSchema: true, streaming: true, modelList: true, localEndpoint: false },
   gemini: { jsonSchema: false, streaming: true, modelList: true, localEndpoint: false },
   ollama: { jsonSchema: false, streaming: true, modelList: true, localEndpoint: true },
-  'lm-studio': { jsonSchema: true, structuredOutput: 'json-schema', streaming: true, modelList: true, localEndpoint: true },
 });
 
 export const SUPPORTED_PROVIDER_IDS = Object.freeze(Object.keys(PROVIDER_CAPABILITIES));
@@ -19,7 +18,6 @@ export const PROVIDER_DEFAULT_BASE_URLS = Object.freeze({
   groq: 'https://api.groq.com/openai/v1',
   gemini: 'https://generativelanguage.googleapis.com',
   ollama: LOCAL_AI_PROVIDERS.ollama.baseUrl,
-  'lm-studio': LOCAL_AI_PROVIDERS['lm-studio'].baseUrl,
 });
 
 export function isSupportedProvider(value) {
@@ -27,7 +25,7 @@ export function isSupportedProvider(value) {
 }
 
 function normalizeProvider(value) {
-  return isSupportedProvider(value) ? value : 'openai-compatible';
+  return isSupportedProvider(value) ? value : null;
 }
 
 function azurePath(config, operation) {
@@ -110,11 +108,6 @@ const adapters = {
     listModels: async (config) => (await requestAiJson({ ...config, pathname: '/models' })).data || [],
     optimize: optimizeOllamaNative,
   },
-  'lm-studio': {
-    test: testOpenAiCompatible,
-    listModels: async (config) => (await requestAiJson({ ...config, pathname: '/models' })).data || [],
-    optimize: createChatCompletion,
-  },
   azure: {
     test: async (config) => {
       await requestAiJson({
@@ -165,6 +158,7 @@ const adapters = {
 
 export function createProvider(config = {}) {
   const id = normalizeProvider(config.provider);
+  if (!id) throw new Error(`不支援的 AI 供應商：${config.provider || '(未設定)'}`);
   const adapter = adapters[id];
   return {
     id,
