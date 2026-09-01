@@ -49,6 +49,34 @@
 
 ## 多語言 LLM 開發中驗證
 
+## REL-040 0.50.1 AI response repair patch release preparation
+
+- 來源與版本：release branch `codex/release-0.50.1` 由 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 建立；`app/package.json`／`app/package-lock.json` 目標版本為 `0.50.1`；PR #1 的五個原始 commit 不再次 merge 或 cherry-pick。
+- 修正範圍：本機 AI 回應缺少 `cues` 的單次格式修復、Markdown-wrapped JSON、跨 text parts 組合、nested wrapper root-array 邊界、LM Studio JSON Schema `response_format` 保留與 failed-repair checkpoint 保護。
+- 靜態／回歸計畫：執行指定 `node --check`、AI focused tests、`npm ci`、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check`；`npm test` 必須包含 `scripts/test-ai-response-parser.mjs`。
+- 發版／封裝計畫：依 `05-DEVELOPMENT-AND-DEPLOYMENT.md` 檢查 runtime manifest／verify、Windows unsigned installer／unpacked package（若本機環境可用）、Release notes、artifact naming、archive integrity、版本與 checksum；不建立 `v0.50.1` tag／GitHub Release，不覆蓋 `v0.50.0`。
+- 實機端點：只讀檢查既有 Ollama／LM Studio loopback endpoint；不下載大型模型、不啟動未授權服務、不把字幕內容送到雲端 provider。若 endpoint 不存在，標記 `LIVE_PROVIDER_TESTS=NOT_RUN` 並提供人工驗收步驟。
+- 審查／發布條件：需完成獨立六面向 review report；本輪發布授權僅涵蓋 release preparation branch、版本／文件同步、測試／候選建置、commit／push 與 release PR，不涵蓋建立 tag 或公開 Release。
+- 實際結果：round1 審查發現 Windows workflow 未設定 `app` working directory，且文件尚未完成 final closeout；已補上 job working directory、npm cache dependency path 與 artifact upload path。round2 確認 workflow finding 已修正；本地候選建置與 installer／renderer smoke、完整測試及文件 closeout 均通過，`LIVE_PROVIDER_TESTS=NOT_RUN` 維持如實揭露。workflow 已移至 repository root `.github/workflows/windows-preview.yml`，Actions run `33459892513` 成功，job `Windows x64 test and package` 為 `success`，artifact `offline-subtitle-factory-0.50.1-windows-x64` 已上傳。
+
+### REL-040 已執行結果（2026-08-31，Asia/Taipei）
+
+- Source validation：`npm ci`、`node --check lib/ai/subtitle-optimizer.mjs`、`node --check scripts/test-ai-response-parser.mjs`、`node scripts/test-ai-response-parser.mjs`、`node scripts/test-ai-optimizer.mjs`、`node scripts/test-ai-providers.mjs`、`node scripts/test-ollama-batch-stream.mjs`、`node scripts/test-ai-fetch.mjs`、`npm run docs:check`、`npm run check` 與 `git diff --check` 均 exit 0；`npm run check` 實際展開的 `npm test` 包含 `scripts/test-ai-response-parser.mjs`。
+- Runtime／package validation：`npm run runtime:manifest` 與 `npm run runtime:verify` 通過；`npm run electron:build:dir -- --config.directories.output=../dist-0.50.1-dir` 與 `npm run electron:build:unsigned -- --config.directories.output=../dist-0.50.1` 通過。候選輸出位於新建 `dist-0.50.1-dir`／`dist-0.50.1`，未覆寫既有 `dist` 或 0.50.0 資產。
+- Candidate artifacts：Setup `offline-subtitle-factory-setup-0.50.1.exe` 274,022,273 bytes／SHA-256 `ad03200058a8f7c8709acc4e59d29e1404bed1bc35c8c3f4e3811eed5560932d`；Portable `offline-subtitle-factory-portable-0.50.1.exe` 273,315,012 bytes／SHA-256 `9adf5a063aaa610918077ec6d615c2cbb0be2c94ad0bb256b028c6347acfa6d4`；blockmap 286,903 bytes／SHA-256 `b981b7168bb66423e6467f3dd36799afeb99f17a44b726cae410f751d2624442`；`latest.yml` 2,119 bytes／SHA-256 `36dd784750b03f489f85264e80177f7cd41dde91ff7fa321f06619ba84ae3775`。
+- Package verification：兩個 EXE 以 NanaZip `7z t` 通過；unpacked `resources/app/package.json` 為 `0.50.1`，包含 `RELEASE-NOTES-0.50.1.md`、`latest.yml`／`app-update.yml`，未包含 `ggml-small.bin` 或 Breeze checkpoint；Setup／Portable 的 Authenticode 狀態均為 `NotSigned`，未宣稱已簽章。
+- Installer／renderer：`scripts/verify-windows-installation.ps1` 通過 Setup 靜默安裝、安裝後 renderer smoke、靜默解除安裝與 executable 移除，以及 Portable renderer smoke；測試涵蓋首頁、Breeze 選擇 modal、manual SRT job、trim、AI review、七個 provider UI 與 folder event。
+- Live provider status：`LIVE_PROVIDER_TESTS=NOT_RUN`；`127.0.0.1:11434` 與 `127.0.0.1:1234` 均 `TcpTestSucceeded=False`，未發現 Ollama／LM Studio 程序。人工驗收步驟：啟動使用者已授權的本機服務並準備既有模型（不得由本流程自動下載大型模型），分別執行正常 `{"cues":[...]}`、Markdown fenced JSON、text parts、第一次缺少 cues 後 repair、nested wrapper root array、第二次失敗停止、取消／timeout、failed checkpoint 與 LM Studio `response_format` equality 測試；完成後保存 endpoint／model／request count／checkpoint 證據，勿把 deterministic tests 當成 live acceptance。
+- 既有 `v0.50.0` tag／Release 未修改；本輪尚未建立 `v0.50.1` tag／GitHub Release。round1 報告為不通過的 workflow finding 已修正，round2 為有條件通過；release PR 尚待需求方審查與人工合併。
+
+### REL-040 release closeout rerun（2026-09-01，Asia/Taipei）
+
+- `npm ci` 完成且 audit 報告 0 vulnerabilities；指定 AI parser／optimizer／provider／Ollama streaming／AI fetch tests、兩個 source syntax checks、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check` 均 exit 0。治理 validator 新增 CRLF fixture coverage，確保 Windows working tree 不會誤判最新 changelog／review entry。
+- `npm run runtime:manifest`、`npm run runtime:verify`、Windows x64 unsigned unpacked／NSIS／Portable build、兩個 EXE 的 NanaZip `7z t`、封裝版本／Release notes／model exclusion／SHA-256 核對，以及 `scripts/verify-windows-installation.ps1` 的 Setup 安裝／renderer／uninstall 與 Portable renderer smoke 均通過。
+- recheck artifacts：Setup `offline-subtitle-factory-setup-0.50.1.exe` 274,022,496 bytes／SHA-256 `25cb89730320f6f95adc6b667fd375d04dfa4635f6dffc98af90314eb3a01677`；Portable `offline-subtitle-factory-portable-0.50.1.exe` 273,315,242 bytes／SHA-256 `78b0f341d49e17afe888369357d4ec815375b2aea0fb21e38bdbcc45eba25e5a`；blockmap 286,922 bytes／SHA-256 `8e051c62852bba98cd3a44d7a6d291c9423543dc225f7efda99d9956647a6d02`；`latest.yml` 2,782 bytes／SHA-256 `066d85fa47b553bdbacf7c33ee8fb1efa42329fa8b6bb97fcfae76dc3a5c6fcd`。Installer unpacked payload 含 `app-update.yml`、0.50.1 Release notes 與 package version 0.50.1，未含 `ggml-small.bin`／Breeze checkpoint；Setup／Portable Authenticode 均為 `NotSigned`。
+- 本輪新輸出只寫入未追蹤的 `../dist-0.50.1-recheck-dir` 與 `../dist-0.50.1-recheck`，未覆寫既有 `dist` 或 0.50.0 資產；Setup／Portable Authenticode 均為 `NotSigned`，未宣稱已簽章。workflow 已移至 repository root；Actions run `33459892513` 的 source tests、unsigned internal preview、renderer/install lifecycle、archive/hash checks 與 artifact upload 均成功，signed build 因無憑證為預期 skipped。
+- `LIVE_PROVIDER_TESTS=NOT_RUN`：loopback Ollama／LM Studio endpoint 均不存在，未啟動服務、未下載模型、未傳送字幕內容；真實 provider、clean-machine、簽章／公證仍由人工驗收處理。
+
 ## AI response parser nested wrapper P1 回歸
 
 - `scripts/test-ai-response-parser.mjs`：驗證 plain／帶前後說明的 Markdown-fenced JSON、text-part arrays、nested explicit `cues` object／string；驗證 top-level message content string 的 root array 仍可接受。

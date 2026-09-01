@@ -51,7 +51,7 @@ if (!currentStatus.includes(`現行版本：${packageJson.version}`)) {
 const standingAuthorization = await readFile(path.join(root, 'docs/project-management/09-STANDING-AUTHORIZATIONS.md'), 'utf8');
 errors.push(...validateStandingAuthorization(standingAuthorization));
 
-const changeLog = await readFile(path.join(root, 'docs/project-management/08-CHANGE-LOG.md'), 'utf8');
+const changeLog = (await readFile(path.join(root, 'docs/project-management/08-CHANGE-LOG.md'), 'utf8')).replace(/\r\n?/g, '\n');
 if (!/^## \d{4}-\d{2}-\d{2} — /m.test(changeLog)) {
   errors.push('08-CHANGE-LOG.md 沒有任何具日期的工作紀錄');
 }

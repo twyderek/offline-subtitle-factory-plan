@@ -1,5 +1,14 @@
 # 離線字幕工廠
 
+## 0.50.1 AI response repair 修正版準備中
+
+0.50.1 是針對本機 AI 字幕回應缺少 `cues` 的 patch release preparation。此候選版本以 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 為基準，尚未建立 `v0.50.1` tag 或 GitHub Release。
+
+- Release notes：[RELEASE-NOTES-0.50.1.md](RELEASE-NOTES-0.50.1.md)
+- 準備分支：`codex/release-0.50.1`
+- 目前公開版本仍為：[v0.50.0](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0)
+- 修正範圍：Markdown-wrapped JSON、跨 text parts JSON、nested wrapper root-array 邊界，以及 Ollama／LM Studio 單次 repair。
+
 ## 0.50.0 正式發布：Windows Breeze ASR 25 一鍵安裝
 
 Windows x64 App 已納入 Breeze ASR 25 managed runtime 的正式一鍵安裝流程。使用者不需要另外安裝 Python、Git 或 Node.js；首次選取 Breeze 時，App 會下載並驗證獨立 CPU runtime，再立即啟用。

@@ -1,3 +1,5 @@
+const normalizeLineEndings = (value) => String(value ?? '').replace(/\r\n?/g, '\n');
+
 const fieldValue = (text, label) => text.match(new RegExp(`^- ${label}：(.*)$`, 'm'))?.[1].trim() ?? '';
 
 const sectionValue = (text, label) => {
@@ -10,6 +12,7 @@ const sectionValue = (text, label) => {
 };
 
 export function validateReviewReport(review, reviewPath) {
+  review = normalizeLineEndings(review);
   const errors = [];
   if (!/^docs\/project-management\/reviews\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-round[1-9]\d*\.md$/.test(reviewPath)) {
     errors.push(`獨立審查檔案名稱不符合 YYYY-MM-DD-<slug>-round<N>.md：${reviewPath}`);
@@ -34,6 +37,7 @@ export function validateReviewReport(review, reviewPath) {
 }
 
 export function latestReviewReference(latest) {
+  latest = normalizeLineEndings(latest);
   const paths = [...latest.matchAll(/審查檔案：`([^`]+-round(\d+)\.md)`/g)];
   const references = paths.map((match, index) => {
     const end = paths[index + 1]?.index ?? latest.length;
@@ -49,6 +53,8 @@ export function latestReviewReference(latest) {
 }
 
 export function validateLatestEntry(latest, reviewContent) {
+  latest = normalizeLineEndings(latest);
+  reviewContent = normalizeLineEndings(reviewContent);
   const errors = [];
   if (fieldValue(latest, '狀態') !== '完成') errors.push('08-CHANGE-LOG.md 的最新工作紀錄尚未標示為「完成」');
   const unresolvedLines = latest.split('\n').filter((line) => /^\s*- [^：]+：\s*待執行/.test(line));

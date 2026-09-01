@@ -6,6 +6,8 @@ const report = `# 獨立審查報告\n## 1. 需求完整性\n- 判定：通過\n
 const base = `## 2026-07-20 — fixture\n- 狀態：完成\n- 變更等級：中\n- 實際修改：驗證「待確認／待執行」敘述不應誤判\n- 獨立審查是否執行：是\n- 獨立審查結論：\n  - 審查檔案：\`${path}\`\n  - 判定（逐字引用審查檔案結論句）：**本輪獨立審查結論為通過，所有治理規則與測試均符合需求。**\n- 發布授權：不適用\n- 遺留風險與後續事項：無。`;
 assert.deepEqual(validateLatestEntry(base, report), []);
 assert.deepEqual(validateLatestEntry(base, report.replace('可逐字引用的完整結論句', '可逐字引用完整結論句')), []);
+assert.deepEqual(validateLatestEntry(base.replaceAll('\n', '\r\n'), report.replaceAll('\n', '\r\n')), []);
+assert.deepEqual(validateReviewReport(report.replaceAll('\n', '\r\n'), path).errors, []);
 assert(validateLatestEntry(base.replace('- 遺留風險與後續事項：無。', '- 遺留風險與後續事項：待執行獨立審查'), report).some((error) => error.includes('待執行')));
 assert(validateReviewReport(report.replace('- 證據：檔案 a.md:1 與指令測試均通過，證據內容足以回溯。', '- 證據：'), path).errors.length);
 assert(validateReviewReport(report, 'docs/project-management/reviews/bad.md').errors.length);
