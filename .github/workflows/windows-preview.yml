@@ -51,6 +51,8 @@ jobs:
       - name: Build unsigned internal preview packages
         if: env.CSC_LINK == '' || env.CSC_KEY_PASSWORD == ''
         env:
+          CSC_LINK: ''
+          CSC_KEY_PASSWORD: ''
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run electron:build:unsigned
 
