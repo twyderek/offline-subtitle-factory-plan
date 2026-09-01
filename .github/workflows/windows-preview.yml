@@ -16,6 +16,9 @@ jobs:
     name: Windows x64 test and package
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      CSC_LINK: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
     defaults:
       run:
         working-directory: app
@@ -42,16 +45,12 @@ jobs:
         run: npm run check
 
       - name: Build Authenticode-signed NSIS Setup and Portable packages
-        if: env.CSC_LINK != ''
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        if: env.CSC_LINK != '' && env.CSC_KEY_PASSWORD != ''
         run: npm run electron:build
 
       - name: Build unsigned internal preview packages
-        if: env.CSC_LINK == ''
+        if: env.CSC_LINK == '' || env.CSC_KEY_PASSWORD == ''
         env:
-          CSC_LINK: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run electron:build:unsigned
 

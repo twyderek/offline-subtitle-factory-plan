@@ -57,7 +57,7 @@
 - 發版／封裝計畫：依 `05-DEVELOPMENT-AND-DEPLOYMENT.md` 檢查 runtime manifest／verify、Windows unsigned installer／unpacked package（若本機環境可用）、Release notes、artifact naming、archive integrity、版本與 checksum；不建立 `v0.50.1` tag／GitHub Release，不覆蓋 `v0.50.0`。
 - 實機端點：只讀檢查既有 Ollama／LM Studio loopback endpoint；不下載大型模型、不啟動未授權服務、不把字幕內容送到雲端 provider。若 endpoint 不存在，標記 `LIVE_PROVIDER_TESTS=NOT_RUN` 並提供人工驗收步驟。
 - 審查／發布條件：需完成獨立六面向 review report；本輪發布授權僅涵蓋 release preparation branch、版本／文件同步、測試／候選建置、commit／push 與 release PR，不涵蓋建立 tag 或公開 Release。
-- 實際結果：round1 審查發現 Windows workflow 未設定 `app` working directory，且文件尚未完成 final closeout；已補上 job working directory、npm cache dependency path 與 artifact upload path。round2 確認 workflow finding 已修正；本地候選建置與 installer／renderer smoke、完整測試及文件 closeout 均通過，`LIVE_PROVIDER_TESTS=NOT_RUN` 維持如實揭露。GitHub Actions run 未觀察到，未宣稱 CI 通過。
+- 實際結果：round1 審查發現 Windows workflow 未設定 `app` working directory，且文件尚未完成 final closeout；已補上 job working directory、npm cache dependency path 與 artifact upload path。round2 確認 workflow finding 已修正；本地候選建置與 installer／renderer smoke、完整測試及文件 closeout 均通過，`LIVE_PROVIDER_TESTS=NOT_RUN` 維持如實揭露。workflow 已移至 repository root `.github/workflows/windows-preview.yml`，push 後 CI 狀態為 `CI=PENDING`，等待實際 Actions run。
 
 ### REL-040 已執行結果（2026-08-31，Asia/Taipei）
 
@@ -74,7 +74,7 @@
 - `npm ci` 完成且 audit 報告 0 vulnerabilities；指定 AI parser／optimizer／provider／Ollama streaming／AI fetch tests、兩個 source syntax checks、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check` 均 exit 0。治理 validator 新增 CRLF fixture coverage，確保 Windows working tree 不會誤判最新 changelog／review entry。
 - `npm run runtime:manifest`、`npm run runtime:verify`、Windows x64 unsigned unpacked／NSIS／Portable build、兩個 EXE 的 NanaZip `7z t`、封裝版本／Release notes／model exclusion／SHA-256 核對，以及 `scripts/verify-windows-installation.ps1` 的 Setup 安裝／renderer／uninstall 與 Portable renderer smoke 均通過。
 - recheck artifacts：Setup `offline-subtitle-factory-setup-0.50.1.exe` 274,022,496 bytes／SHA-256 `25cb89730320f6f95adc6b667fd375d04dfa4635f6dffc98af90314eb3a01677`；Portable `offline-subtitle-factory-portable-0.50.1.exe` 273,315,242 bytes／SHA-256 `78b0f341d49e17afe888369357d4ec815375b2aea0fb21e38bdbcc45eba25e5a`；blockmap 286,922 bytes／SHA-256 `8e051c62852bba98cd3a44d7a6d291c9423543dc225f7efda99d9956647a6d02`；`latest.yml` 2,782 bytes／SHA-256 `066d85fa47b553bdbacf7c33ee8fb1efa42329fa8b6bb97fcfae76dc3a5c6fcd`。Installer unpacked payload 含 `app-update.yml`、0.50.1 Release notes 與 package version 0.50.1，未含 `ggml-small.bin`／Breeze checkpoint；Setup／Portable Authenticode 均為 `NotSigned`。
-- 本輪新輸出只寫入未追蹤的 `../dist-0.50.1-recheck-dir` 與 `../dist-0.50.1-recheck`，未覆寫既有 `dist` 或 0.50.0 資產；Setup／Portable Authenticode 均為 `NotSigned`，未宣稱已簽章。GitHub Actions 未觀察到新的 CI run，不能宣稱 CI 通過。
+- 本輪新輸出只寫入未追蹤的 `../dist-0.50.1-recheck-dir` 與 `../dist-0.50.1-recheck`，未覆寫既有 `dist` 或 0.50.0 資產；Setup／Portable Authenticode 均為 `NotSigned`，未宣稱已簽章。workflow 已移至 repository root，push 後 `CI=PENDING`，須等待 GitHub Actions run 結果，不能預先宣稱 CI 通過。
 - `LIVE_PROVIDER_TESTS=NOT_RUN`：loopback Ollama／LM Studio endpoint 均不存在，未啟動服務、未下載模型、未傳送字幕內容；真實 provider、clean-machine、簽章／公證仍由人工驗收處理。
 
 ## AI response parser nested wrapper P1 回歸
