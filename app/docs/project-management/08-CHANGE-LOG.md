@@ -1,5 +1,36 @@
 # 改版與工作紀錄
 
+## 2026-09-01 — Offline Subtitle Factory 0.50.1 release preparation rerun and closeout（REL-040）
+
+- 狀態：完成
+- 結案判定：重新執行 0.50.1 source／package／installer／文件驗證，修正 Windows CRLF 下 `docs:check:final` 的治理 parser 相容性，完成 release PR #2 說明更新；不建立 tag／GitHub Release
+- 審查／交付屬性：release preparation closeout；沿用已由指定 `main` base 建立的 `codex/release-0.50.1`，不重建 branch、不回合併 `codex/ai-cues-response-repair`
+- 執行者：Codex
+- 需求來源：需求方要求以 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 準備 0.50.1 patch release，保留 squash merge 語意與既有 0.50.0 tag／Release／資產
+- 關聯需求／缺陷：`REL-040`、PR #1 AI response repair、Windows CRLF `docs:check:final` release-gate compatibility
+- 變更等級：發布（release preparation、治理檢查器修正、候選封裝與 PR 說明；不含公開 tag／Release）
+- 執行前已讀：`npm run project:preflight -- --type=release`、本文件最新條目、release／test／independent-review／build／closeout workflows 與有效 `AUTH-2026-07-23-01`（是）
+- 來源基準：`codex/release-0.50.1` `bc00853bdf784f12a1d76a60905aa670f51f9eca`，merge-base／`main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e`；既有 0.50.1 preparation commit、review reports 與 untracked build/runtime artifacts 保留
+- 目標與成功條件：版本仍為 `0.50.1`；歷史 0.50.0 來源只做分類不改寫；exact source／AI／package／installer checks、runtime verify、Windows candidate build／archive／smoke、`docs:check:final` 與 diff check 通過；live provider 缺件時標示 `LIVE_PROVIDER_TESTS=NOT_RUN`；更新既有 release PR #2，不建立新 PR、不 merge、不建 tag／Release
+- 不在範圍：不修改或重新指向 `v0.50.0` tag／Release 資產；不建立 `v0.50.1` tag；不發布 GitHub Release；不下載大型模型、不啟動未授權外部服務、不傳送字幕到雲端 provider；不清理既有 untracked artifacts
+- 預計影響檔案／模組：`scripts/project-docs-validator.mjs`、`scripts/check-project-docs.mjs`、`scripts/test-project-docs-validator.mjs`、必要的 `00-CURRENT-STATUS.md`／`06-TEST-AND-PROCESS-AUDIT.md`／本工作紀錄與 release PR metadata
+- 風險與回復方式：CRLF 正規化若不完整會使 release gate 在 Windows 失效；候選封裝／installer 若失敗即停止 PR closeout；以 CRLF fixture、完整 npm test、archive／checksum／renderer smoke 與既有 v0.50.0 hash／tag 核對回復驗證；保留所有歷史與未追蹤檔案
+- 驗證計畫：重新執行 `npm ci`、指定 node／AI tests、`npm run docs:check`、`npm run check`、`npm run docs:check:final`、`git diff --check`；依 workflow 執行 `runtime:manifest`／`runtime:verify`、unsigned dir／installer build、7z／版本／內容／checksum／Setup／Portable／uninstall smoke；loopback probe、PR body 與 tag／Release non-creation 核對
+- 授權背景：需求方明確授權 release preparation 的版本／文件／測試／候選封裝、commit／push 與 release PR；不授權建立 `v0.50.1` tag、GitHub Release 或公開安裝資產
+- 實際修改與驗證結果：修正 `scripts/project-docs-validator.mjs`、`scripts/check-project-docs.mjs` 與 `scripts/test-project-docs-validator.mjs` 的 Windows CRLF 正規化與 fixture coverage，讓 release gate 在 CRLF working tree 正確解析 changelog／review。`npm ci`（286 packages、0 vulnerabilities）、指定 node／AI／provider tests、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check` 均 exit 0；`runtime:manifest`／`runtime:verify`、0.50.1 Windows x64 unsigned unpacked／NSIS／Portable build、NanaZip archive tests、package／Release notes／model exclusion／checksum 核對與 Setup／Portable／uninstall renderer smoke 均通過。新候選輸出僅寫入未追蹤 `../dist-0.50.1-recheck-dir`／`../dist-0.50.1-recheck`，未覆寫既有資產；PR #2 已更新說明並維持 open，未建立新 PR、未 merge、未建立 tag／GitHub Release。
+- 獨立審查是否執行：是（round1、round2、round3）
+- round3 審查檔案：`docs/project-management/reviews/2026-09-01-0-50-1-release-preparation-round3.md`
+- round3 判定（逐字引用完整結論句）：**本輪 round3 獨立六面向審查確認指定 `main` base／branch ancestry、0.50.1 package／lock／產品版本來源、AI parser regression、Release notes、既有 v0.50.0 保留、PR #2 邊界與本地 candidate archive／checksum evidence 均有支持；但目前 `npm run docs:check:final` exit 1，且 current closeout／validator 修改尚未進入既有 PR #2，因此只能有條件通過 release-preparation evidence review，不能宣稱治理 final closeout 或公開發布準備完成；缺少 CI、live provider、clean-machine 與本輪 installer rerun 屬 evidence gaps，`LIVE_PROVIDER_TESTS=NOT_RUN` 必須維持。**
+- round3 條件是否已被需求方接受：是（本輪已完成 changelog／validator closeout，重新通過 `docs:check:final`，並補上本輪 installer／renderer smoke；CI、live provider、clean-machine、簽章／公證仍列為未閉合風險，不作為本地 release preparation 通過的假設）
+- 發布授權：
+  - 是否需要：是（本輪為 release preparation／候選封裝與既有 PR #2 更新，非公開 Release）
+  - 核准人／角色：需求提出者／產品負責人
+  - 核准時間：2026-09-01（Asia/Taipei）
+  - 核准範圍：需求方已同意打包、提交、推送、更新既有 release PR #2，並接受以未簽章、未公證、未實機測試與未執行 GitHub Actions 作為 release preparation 風險揭露；不授權建立 `v0.50.1` tag、GitHub Release 或公開安裝資產
+- 遺留風險與後續事項：`LIVE_PROVIDER_TESTS=NOT_RUN`；真實 Ollama／LM Studio、取消／timeout／checkpoint 端到端、GitHub Actions、Windows clean-machine、Authenticode、macOS notarization 與正式 0.50.1 asset 仍未驗收或建立。新 recheck installer 已含 `app-update.yml`；unsigned／未公證限制仍須在後續公開發布前重新核對。下一步由需求方審查並人工合併既有 PR #2；公開 tag／Release 需另行授權。
+
+---
+
 ## 2026-08-31 — Offline Subtitle Factory 0.50.1 AI response repair patch release preparation（REL-040）
 
 - 狀態：完成

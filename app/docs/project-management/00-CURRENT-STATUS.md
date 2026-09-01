@@ -1,6 +1,6 @@
 # 目前專案狀態
 
-> 最後查證日期：2026-08-31
+> 最後查證日期：2026-09-01
 > 現行版本：0.50.1（AI response repair release preparation candidate）
 > 現行公開版本：0.50.0（GitHub Latest）
 > 發布 tag／commit：`v0.50.0` → `44c40225e2b0a39e759048439e3db912b6333ad9`；既有 `v0.49.1` 保留
@@ -13,8 +13,9 @@
 - 本 patch release notes 為 `RELEASE-NOTES-0.50.1.md`，建置設定與 Windows preview workflow 已同步 0.50.1；歷史 `RELEASE-NOTES-0.50.0.md`、changelog、review evidence 與既有資產不改寫。
 - PR #1 已將 AI response parser 修正 squash merge 至 main：支援 Markdown-wrapped JSON、跨 text parts JSON，嚴格拒絕 nested wrapper root arrays；Ollama／LM Studio 最多 repair 一次，LM Studio 保留 JSON Schema `response_format`，repair 失敗不寫入 completed checkpoint。
 - `v0.50.1` tag、GitHub Release 與正式安裝資產尚未建立；公開版本仍為 `v0.50.0`，既有 tag／Release 保留不覆蓋。
-- source focused／完整回歸、文件檢查、runtime manifest／verify、Windows unpacked／unsigned Setup／Portable build、封裝內容／archive／checksum 與 Setup／Portable／uninstall renderer smoke 已通過；round1／round2 獨立審查報告已建立，`docs:check:final` 已通過，release PR 可供需求方審查。
-- `LIVE_PROVIDER_TESTS=NOT_RUN`：2026-08-31 檢查 `127.0.0.1:11434`（Ollama）與 `127.0.0.1:1234`（LM Studio）均未監聽，亦未發現對應程序；未下載模型、未送出字幕資料，不能視為真實 provider 驗收通過。
+- source focused／完整回歸、文件檢查、runtime manifest／verify、Windows unpacked／unsigned Setup／Portable build、封裝內容／archive／checksum 與 Setup／Portable／uninstall renderer smoke 已通過；round1／round2／round3 獨立審查報告已建立，`docs:check:final` 已通過，release PR 可供需求方審查。
+- 2026-09-01 rerun 修正 Windows CRLF 下治理 parser 的行尾相容性，重新通過指定 node／AI tests、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check`；0.50.1 candidate 的 archive、package／model exclusion、checksum、Setup／Portable／uninstall renderer smoke 亦通過。
+- `LIVE_PROVIDER_TESTS=NOT_RUN`：2026-09-01 檢查 `127.0.0.1:11434`（Ollama）與 `127.0.0.1:1234`（LM Studio）均未監聽，亦未發現對應程序；未下載模型、未送出字幕資料，不能視為真實 provider 驗收通過。
 
 ## 0.50.0 Windows Breeze managed runtime 正式發布（REL-039）
 

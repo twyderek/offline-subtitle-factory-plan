@@ -69,6 +69,14 @@
 - Live provider status：`LIVE_PROVIDER_TESTS=NOT_RUN`；`127.0.0.1:11434` 與 `127.0.0.1:1234` 均 `TcpTestSucceeded=False`，未發現 Ollama／LM Studio 程序。人工驗收步驟：啟動使用者已授權的本機服務並準備既有模型（不得由本流程自動下載大型模型），分別執行正常 `{"cues":[...]}`、Markdown fenced JSON、text parts、第一次缺少 cues 後 repair、nested wrapper root array、第二次失敗停止、取消／timeout、failed checkpoint 與 LM Studio `response_format` equality 測試；完成後保存 endpoint／model／request count／checkpoint 證據，勿把 deterministic tests 當成 live acceptance。
 - 既有 `v0.50.0` tag／Release 未修改；本輪尚未建立 `v0.50.1` tag／GitHub Release。round1 報告為不通過的 workflow finding 已修正，round2 為有條件通過；release PR 尚待需求方審查與人工合併。
 
+### REL-040 release closeout rerun（2026-09-01，Asia/Taipei）
+
+- `npm ci` 完成且 audit 報告 0 vulnerabilities；指定 AI parser／optimizer／provider／Ollama streaming／AI fetch tests、兩個 source syntax checks、`npm run docs:check`、`npm run check`、`npm run docs:check:final` 與 `git diff --check` 均 exit 0。治理 validator 新增 CRLF fixture coverage，確保 Windows working tree 不會誤判最新 changelog／review entry。
+- `npm run runtime:manifest`、`npm run runtime:verify`、Windows x64 unsigned unpacked／NSIS／Portable build、兩個 EXE 的 NanaZip `7z t`、封裝版本／Release notes／model exclusion／SHA-256 核對，以及 `scripts/verify-windows-installation.ps1` 的 Setup 安裝／renderer／uninstall 與 Portable renderer smoke 均通過。
+- recheck artifacts：Setup `offline-subtitle-factory-setup-0.50.1.exe` 274,022,496 bytes／SHA-256 `25cb89730320f6f95adc6b667fd375d04dfa4635f6dffc98af90314eb3a01677`；Portable `offline-subtitle-factory-portable-0.50.1.exe` 273,315,242 bytes／SHA-256 `78b0f341d49e17afe888369357d4ec815375b2aea0fb21e38bdbcc45eba25e5a`；blockmap 286,922 bytes／SHA-256 `8e051c62852bba98cd3a44d7a6d291c9423543dc225f7efda99d9956647a6d02`；`latest.yml` 2,782 bytes／SHA-256 `066d85fa47b553bdbacf7c33ee8fb1efa42329fa8b6bb97fcfae76dc3a5c6fcd`。Installer unpacked payload 含 `app-update.yml`、0.50.1 Release notes 與 package version 0.50.1，未含 `ggml-small.bin`／Breeze checkpoint；Setup／Portable Authenticode 均為 `NotSigned`。
+- 本輪新輸出只寫入未追蹤的 `../dist-0.50.1-recheck-dir` 與 `../dist-0.50.1-recheck`，未覆寫既有 `dist` 或 0.50.0 資產；Setup／Portable Authenticode 均為 `NotSigned`，未宣稱已簽章。GitHub Actions 未觀察到新的 CI run，不能宣稱 CI 通過。
+- `LIVE_PROVIDER_TESTS=NOT_RUN`：loopback Ollama／LM Studio endpoint 均不存在，未啟動服務、未下載模型、未傳送字幕內容；真實 provider、clean-machine、簽章／公證仍由人工驗收處理。
+
 ## AI response parser nested wrapper P1 回歸
 
 - `scripts/test-ai-response-parser.mjs`：驗證 plain／帶前後說明的 Markdown-fenced JSON、text-part arrays、nested explicit `cues` object／string；驗證 top-level message content string 的 root array 仍可接受。
