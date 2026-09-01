@@ -9,6 +9,7 @@ const exePath = process.argv[2];
 const port = Number(process.argv[3] || 9235);
 const timeoutMs = Number(process.argv[4] || 30000);
 const trimMediaPath = process.argv[5] || '';
+const devToolsCallTimeoutMs = Math.max(30000, timeoutMs);
 
 if (!exePath) {
   throw new Error('Usage: node scripts/verify-electron-renderer.mjs <exe-path> [debug-port]');
@@ -108,7 +109,7 @@ async function connectWebSocket(wsUrl) {
         const timer = setTimeout(() => {
           pending.delete(messageId);
           reject(new Error(`Timed out waiting for DevTools method ${method}`));
-        }, 15000);
+        }, devToolsCallTimeoutMs);
         pending.set(messageId, { resolve, timer });
       });
     },
