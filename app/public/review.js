@@ -1,4 +1,4 @@
-import { isLoopbackAiUrl, providerProfileSnapshot, runProviderConnectionTest } from './ai-provider-settings.mjs';
+import { AI_PROVIDER_MIGRATION_NOTICE, isLoopbackAiUrl, migrateLegacyAiLocalStorage, providerProfileSnapshot, runProviderConnectionTest } from './ai-provider-settings.mjs';
 import { normalizeBilingualCues, parseSrtBilingual, renderCueText, serializeSrt, serializeVtt } from './bilingual-subtitles.mjs';
 import { assessSubtitleCue, filterQualityCues } from './subtitle-quality.mjs';
 import { selectAiCues } from './ai-scope.mjs';
@@ -70,7 +70,8 @@ const ids = [
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 const settingIds = ['fontFamily', 'fontSize', 'fontColor', 'outlineColor', 'outlineWidth', 'subtitlePosition', 'marginV', 'bold'];
 const aiSettingIds = ['aiEnabled', 'aiProvider', 'aiBaseUrl', 'aiModel', 'aiDeployment', 'aiApiVersion', 'aiBatchSize', 'aiApiKey', 'aiLanguage', 'aiCustomLanguage', 'aiTimeoutSeconds', 'aiMaxRetries', 'aiRetryBaseMs', 'aiInstructions'];
-const VALID_AI_PROVIDERS = ['openai', 'openai-compatible', 'azure', 'groq', 'gemini', 'ollama', 'lm-studio'];
+const VALID_AI_PROVIDERS = ['openai', 'openai-compatible', 'azure', 'groq', 'gemini', 'ollama'];
+const legacyAiStorageMigration = migrateLegacyAiLocalStorage(localStorage);
 
 document.getElementById('reviewVideoFile').addEventListener('change', handleVideoFile);
 document.getElementById('reviewSrtFile').addEventListener('change', handleSrtFile);
@@ -252,7 +253,7 @@ function getAiLanguage() {
 
 function applyAiSettings(settings) {
   document.getElementById('aiEnabled').checked = Boolean(settings.enabled);
-  document.getElementById('aiProvider').value = settings.provider || 'openai-compatible';
+  document.getElementById('aiProvider').value = settings.provider || '';
   document.getElementById('aiBaseUrl').value = settings.baseUrl || '';
   document.getElementById('aiModel').value = settings.model || '';
   document.getElementById('aiDeployment').value = settings.deployment || '';
@@ -260,7 +261,7 @@ function applyAiSettings(settings) {
   const azure = settings.provider === 'azure';
   document.getElementById('aiDeployment').disabled = !azure;
   document.getElementById('aiApiVersion').disabled = !azure;
-  document.getElementById('aiBatchSize').value = settings.batchSize || (['ollama', 'lm-studio'].includes(settings.provider) ? 8 : 30);
+  document.getElementById('aiBatchSize').value = settings.batchSize || (settings.provider === 'ollama' ? 8 : 30);
   document.getElementById('aiApiKey').value = '';
   document.getElementById('aiApiKey').dataset.hasKey = settings.hasApiKey ? 'true' : 'false';
   document.getElementById('aiApiKey').placeholder = settings.hasApiKey ? '已安全保存；留空表示沿用' : (settings.requiresApiKey === false ? '本機 loopback 端點可留空' : '請輸入 API Key');
@@ -282,7 +283,9 @@ function updateAiPrivacyStatus() {
   const baseUrl = document.getElementById('aiBaseUrl').value.trim();
   const local = isLoopbackAiUrl(baseUrl);
   const status = document.getElementById('aiPrivacyStatus');
-  status.textContent = local
+  status.textContent = !document.getElementById('aiProvider').value
+    ? '尚未選擇 AI 供應商。'
+    : local
     ? '本機模式：字幕只送往此電腦的 loopback 服務；不需要雲端同意或 API Key。'
     : '雲端／遠端模式：字幕文字會離開此電腦，必須保存 API Key 並確認資料傳送同意。';
   document.getElementById('aiConsent').disabled = local;
@@ -295,7 +298,9 @@ async function loadAiSettings() {
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
     applyAiSettings(result.settings);
-    setAiSettingsStatus('設定已載入');
+    setAiSettingsStatus(result.settings.migrationNotice || (legacyAiStorageMigration.migrated
+      ? AI_PROVIDER_MIGRATION_NOTICE
+      : '設定已載入'));
   } catch (error) {
     setAiSettingsStatus(`載入失敗：${error.message}`);
   }
@@ -352,7 +357,10 @@ async function saveAiSettings() {
 
 async function clearAiKey() {
   const provider = document.getElementById('aiProvider').value;
-  if (!VALID_AI_PROVIDERS.includes(provider)) throw new Error(`不支援的 AI 供應商：${provider}`);
+  if (!VALID_AI_PROVIDERS.includes(provider)) {
+    setAiSettingsStatus('尚未選擇受支援的 AI 供應商');
+    return;
+  }
   if (window.electronAPI?.clearAiKey) await window.electronAPI.clearAiKey(provider);
   await fetch(`${API_BASE}/api/ai/runtime-key`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, apiKey: '' }) });
   const response = await fetch(`${API_BASE}/api/ai/key?provider=${encodeURIComponent(provider)}`, { method: 'DELETE' });
@@ -416,6 +424,21 @@ async function importAiGlossary() {
 
 async function loadAiProviderProfile() {
   const provider = document.getElementById('aiProvider').value;
+  if (!provider) {
+    document.getElementById('aiBaseUrl').value = '';
+    document.getElementById('aiModel').value = '';
+    document.getElementById('aiDeployment').value = '';
+    document.getElementById('aiDeployment').disabled = true;
+    document.getElementById('aiApiVersion').value = '';
+    document.getElementById('aiApiVersion').disabled = true;
+    document.getElementById('aiBatchSize').value = 30;
+    document.getElementById('aiApiKey').value = '';
+    document.getElementById('aiApiKey').dataset.hasKey = 'false';
+    state.aiProviderProfileSnapshot = providerProfileSnapshot({ provider: '' });
+    updateAiPrivacyStatus();
+    setAiSettingsStatus('尚未選擇 AI 供應商');
+    return;
+  }
   if (!VALID_AI_PROVIDERS.includes(provider)) {
     setAiSettingsStatus(`不支援的 AI 供應商：${provider}`);
     return;
@@ -431,7 +454,6 @@ async function loadAiProviderProfile() {
     azure: '',
     'openai-compatible': '',
     ollama: 'http://127.0.0.1:11434/v1',
-    'lm-studio': 'http://127.0.0.1:1234/v1',
   };
   document.getElementById('aiBaseUrl').value = profile.baseUrl || defaults[provider] || '';
   document.getElementById('aiModel').value = profile.model || '';
@@ -440,7 +462,7 @@ async function loadAiProviderProfile() {
   document.getElementById('aiDeployment').disabled = !azure;
   document.getElementById('aiApiVersion').value = azure ? (profile.apiVersion || '2024-12-01-preview') : '';
   document.getElementById('aiApiVersion').disabled = !azure;
-  document.getElementById('aiBatchSize').value = profile.batchSize || (['ollama', 'lm-studio'].includes(provider) ? 8 : 30);
+  document.getElementById('aiBatchSize').value = profile.batchSize || (provider === 'ollama' ? 8 : 30);
   const keyInput = document.getElementById('aiApiKey');
   keyInput.value = '';
   keyInput.dataset.hasKey = result.hasApiKey ? 'true' : 'false';
@@ -475,13 +497,13 @@ async function loadAiModels() {
 async function discoverLocalAi() {
   const button = document.getElementById('discoverLocalAi');
   button.disabled = true;
-  setAiSettingsStatus('正在掃描 Ollama 與 LM Studio…');
+  setAiSettingsStatus('正在掃描 Ollama…');
   try {
     const response = await fetch(`${API_BASE}/api/ai/local-services`);
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
     const available = result.services.filter((service) => service.available);
-    if (!available.length) throw new Error('找不到已啟動的 Ollama 或 LM Studio 本機服務');
+    if (!available.length) throw new Error('找不到已啟動的 Ollama 本機服務');
     const selected = available[0];
     document.getElementById('aiProvider').value = selected.provider;
     document.getElementById('aiBaseUrl').value = selected.baseUrl;
@@ -519,7 +541,7 @@ async function testAiConnection() {
   const button = document.getElementById('testAiConnection');
   const settings = collectAiSettings();
   if (!VALID_AI_PROVIDERS.includes(settings.provider)) {
-    setAiSettingsStatus(`連線失敗：不支援的 AI 供應商：${settings.provider}`);
+    setAiSettingsStatus('連線失敗：請先選擇受支援的 AI 供應商');
     return;
   }
   const result = await runProviderConnectionTest({

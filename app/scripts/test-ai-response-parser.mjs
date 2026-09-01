@@ -127,7 +127,7 @@ await assert.rejects(
 );
 assert.equal(strictMissingCuesCalls, 1, '非本機 provider 不得進行本機格式 repair');
 
-for (const provider of ['ollama', 'lm-studio']) {
+for (const provider of ['ollama']) {
   let calls = 0;
   const requestBodies = [];
   const repaired = await optimizeSubtitleCues({
@@ -136,7 +136,6 @@ for (const provider of ['ollama', 'lm-studio']) {
       provider,
       model: 'test-model',
       batchSize: 1,
-      ...(provider === 'lm-studio' ? { capabilities: { jsonSchema: true, structuredOutput: 'json-schema' } } : {}),
     },
     complete: async (body) => {
       calls += 1;
@@ -150,16 +149,9 @@ for (const provider of ['ollama', 'lm-studio']) {
   assert.equal(calls, 2, `${provider} 缺少 cues 時應只 repair 一次`);
   assert.match(requestBodies[1].messages[0].content, /只能輸出一個 JSON object/);
   assert.equal(repaired.suggestions[0].text, expectedCue.text);
-  if (provider === 'lm-studio') {
-    assert.deepEqual(
-      requestBodies[1].response_format,
-      requestBodies[0].response_format,
-      'LM Studio repair 不得覆寫初始 JSON Schema response_format',
-    );
-  }
 }
 
-for (const provider of ['ollama', 'lm-studio']) {
+for (const provider of ['ollama']) {
   let calls = 0;
   const repaired = await optimizeSubtitleCues({
     cues: source,
@@ -167,7 +159,6 @@ for (const provider of ['ollama', 'lm-studio']) {
       provider,
       model: 'test-model',
       batchSize: 1,
-      ...(provider === 'lm-studio' ? { capabilities: { jsonSchema: true, structuredOutput: 'json-schema' } } : {}),
     },
     complete: async () => {
       calls += 1;
@@ -186,7 +177,7 @@ let failedRepairCheckpoint = null;
 await assert.rejects(
   () => optimizeSubtitleCues({
     cues: source,
-    config: { provider: 'lm-studio', model: 'test-model', batchSize: 1 },
+    config: { provider: 'ollama', model: 'test-model', batchSize: 1 },
     complete: async () => {
       failedRepairCalls += 1;
       return { choices: [{ message: { content: JSON.stringify({ answer: '仍然沒有 cues' }) } }] };
@@ -199,21 +190,46 @@ await assert.rejects(
 assert.equal(failedRepairCalls, 2, 'failed repair 不得超過初次回應加一次 repair');
 assert.equal(failedRepairCheckpoint, null, 'failed repair 不得寫入 completed checkpoint');
 
-let lmStudioBody;
+let schemaInitialBody;
+let schemaRepairBody;
 await optimizeSubtitleCues({
   cues: source,
   config: {
-    provider: 'lm-studio',
+    provider: 'openai',
     model: 'test-model',
     batchSize: 1,
+    capabilities: { jsonSchema: true, structuredOutput: 'json-schema' },
   },
   complete: async (body) => {
-    lmStudioBody = body;
+    if (!schemaInitialBody) schemaInitialBody = body;
+    else schemaRepairBody = body;
     return { choices: [{ message: { content: jsonObject } }] };
   },
 });
-assert.equal(lmStudioBody.response_format.type, 'json_schema', 'LM Studio 應保留 JSON Schema response_format');
-assert.equal(lmStudioBody.response_format.json_schema.name, 'subtitle_optimization');
-assert.equal(lmStudioBody.response_format.json_schema.schema.required.includes('cues'), true);
+assert.equal(schemaInitialBody.response_format.type, 'json_schema', 'generic JSON Schema provider 應送出 JSON Schema response_format');
+assert.equal(schemaInitialBody.response_format.json_schema.name, 'subtitle_optimization');
+assert.equal(schemaInitialBody.response_format.json_schema.schema.required.includes('cues'), true);
+assert.deepEqual(schemaRepairBody, undefined, '成功的初次 JSON Schema 回應不需要 repair');
+
+let schemaRepairInitial;
+let schemaRepairRetry;
+let schemaRepairCalls = 0;
+await optimizeSubtitleCues({
+  cues: source,
+  config: {
+    provider: 'ollama',
+    model: 'test-model',
+    batchSize: 1,
+    capabilities: { jsonSchema: true, structuredOutput: 'json-schema' },
+  },
+  complete: async (body) => {
+    schemaRepairCalls += 1;
+    if (schemaRepairCalls === 1) schemaRepairInitial = body;
+    else schemaRepairRetry = body;
+    return { choices: [{ message: { content: schemaRepairCalls === 1 ? JSON.stringify({ answer: 'missing cues' }) : jsonObject } }] };
+  },
+});
+assert.equal(schemaRepairCalls, 2, 'Ollama generic JSON Schema response 缺少 cues 時應只 repair 一次');
+assert.deepEqual(schemaRepairRetry.response_format, schemaRepairInitial.response_format, 'Ollama repair 不得覆寫 generic JSON Schema response_format');
 
 console.log('AI response parser regression tests passed.');

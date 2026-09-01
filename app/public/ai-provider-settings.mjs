@@ -1,3 +1,94 @@
+const DISCONTINUED_AI_PROVIDER = 'lm-studio';
+export const AI_PROVIDER_MIGRATION_NOTICE = 'LM Studio 已停止支援，相關設定已移除，請重新選擇 AI 供應商。';
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function migrateAiSettings(value = {}) {
+  if (!isRecord(value)) return { settings: value, migrated: false };
+  let settings = { ...value };
+  let migrated = false;
+  const provider = String(settings.provider || '').trim().toLowerCase();
+  if (provider === DISCONTINUED_AI_PROVIDER) {
+    settings = {
+      ...settings,
+      enabled: false,
+      provider: '',
+      baseUrl: '',
+      model: '',
+      deployment: '',
+      apiVersion: '',
+      migrationNotice: AI_PROVIDER_MIGRATION_NOTICE,
+    };
+    for (const key of ['endpoint', 'apiKey', 'apiKeyRef', 'secret', 'secretRef', 'secretReference', 'capabilities']) delete settings[key];
+    migrated = true;
+  }
+  if (isRecord(settings.profiles) && Object.hasOwn(settings.profiles, DISCONTINUED_AI_PROVIDER)) {
+    settings.profiles = { ...settings.profiles };
+    delete settings.profiles[DISCONTINUED_AI_PROVIDER];
+    migrated = true;
+  }
+  if (migrated && !settings.migrationNotice) settings.migrationNotice = AI_PROVIDER_MIGRATION_NOTICE;
+  return { settings, migrated };
+}
+
+export function migrateImportedProject(value = {}) {
+  let project;
+  try { project = JSON.parse(JSON.stringify(value)); } catch { project = value; }
+  if (!isRecord(project)) return { project, migrated: false };
+  const direct = migrateAiSettings(project);
+  let migrated = false;
+  if (direct.migrated && (Object.hasOwn(project, 'provider') || Object.hasOwn(project, 'profiles'))) {
+    project = direct.settings;
+    migrated = true;
+  }
+  const migrateField = (container, field) => {
+    if (!isRecord(container) || !isRecord(container[field])) return;
+    const result = migrateAiSettings(container[field]);
+    if (result.migrated) {
+      container[field] = result.settings;
+      migrated = true;
+    }
+  };
+  migrateField(project, 'ai');
+  migrateField(project, 'aiSettings');
+  migrateField(project, 'settings');
+  if (isRecord(project.settings)) migrateField(project.settings, 'ai');
+  return { project, migrated };
+}
+
+export function migrateLegacyAiLocalStorage(storage) {
+  if (!storage || typeof storage.length !== 'number') return { migrated: false, changedKeys: [] };
+  const changedKeys = [];
+  for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index);
+    const raw = key == null ? '' : String(storage.getItem(key) || '');
+    if (!/ai|provider|setting|profile|secret/i.test(key || '')) continue;
+    if (raw.trim().toLowerCase() === DISCONTINUED_AI_PROVIDER || /^https?:\/\/(?:127\.0\.0\.1|localhost):1234(?:\/|$)/i.test(raw.trim())) {
+      try { storage.removeItem(key); changedKeys.push(key); } catch {}
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const result = migrateImportedProject(parsed);
+      let migratedValue = result.project;
+      let migrated = result.migrated;
+      if (isRecord(migratedValue) && isRecord(migratedValue.providers) && Object.hasOwn(migratedValue.providers, DISCONTINUED_AI_PROVIDER)) {
+        migratedValue = { ...migratedValue, providers: { ...migratedValue.providers } };
+        delete migratedValue.providers[DISCONTINUED_AI_PROVIDER];
+        if (!Object.keys(migratedValue.providers).length) delete migratedValue.providers;
+        migrated = true;
+      }
+      if (migrated) {
+        storage.setItem(key, JSON.stringify(migratedValue));
+        changedKeys.push(key);
+      }
+    } catch {}
+  }
+  return { migrated: changedKeys.length > 0, changedKeys };
+}
+
 export function providerProfileSnapshot(value = {}) {
   const provider = String(value.provider || '').trim();
   return {

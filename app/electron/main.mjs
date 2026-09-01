@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { isSupportedProvider } from '../lib/ai/providers.mjs';
+import { AI_PROVIDER_MIGRATION_NOTICE, DISCONTINUED_AI_PROVIDER, isDiscontinuedAiProvider, migrateAiSecrets, migrateImportedProject } from '../lib/ai/provider-migration.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -20,7 +22,8 @@ function secureAiKeysPath() { return path.join(app.getPath('userData'), 'config'
 function readSecureAiKeys() {
   try {
     if (!safeStorage.isEncryptionAvailable() || !fs.existsSync(secureAiKeysPath())) return {};
-    return JSON.parse(safeStorage.decryptString(Buffer.from(fs.readFileSync(secureAiKeysPath(), 'utf8'), 'base64')));
+    const keys = JSON.parse(safeStorage.decryptString(Buffer.from(fs.readFileSync(secureAiKeysPath(), 'utf8'), 'base64')));
+    return keys && typeof keys === 'object' ? keys : {};
   } catch { return {}; }
 }
 function writeSecureAiKeys(keys) {
@@ -30,15 +33,36 @@ function writeSecureAiKeys(keys) {
 }
 function migrateLegacyAiKeys() {
   const legacyPath = path.join(app.getPath('userData'), 'config', 'ai-secrets.json');
-  if (!fs.existsSync(legacyPath) || !safeStorage.isEncryptionAvailable()) return;
+  if (!fs.existsSync(legacyPath)) return;
   try {
     const legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
-    const migrated = { ...(legacy.providers || {}) };
-    if (legacy.apiKey && !migrated['openai-compatible']) migrated['openai-compatible'] = legacy.apiKey;
+    const settingsPath = path.join(app.getPath('userData'), 'config', 'settings.json');
+    let removedProviderIsCurrent = false;
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      removedProviderIsCurrent = isDiscontinuedAiProvider(settings?.ai?.provider);
+    } catch {}
+    const cleaned = migrateAiSecrets(legacy, { removeLegacyApiKey: removedProviderIsCurrent });
+    if (!safeStorage.isEncryptionAvailable()) {
+      if (cleaned.migrated) {
+        if (Object.keys(cleaned.secrets).length) fs.writeFileSync(legacyPath, `${JSON.stringify(cleaned.secrets, null, 2)}\n`, 'utf8');
+        else fs.unlinkSync(legacyPath);
+      }
+      return;
+    }
+    const migrated = { ...(cleaned.secrets.providers || {}) };
+    if (cleaned.secrets.apiKey && !migrated['openai-compatible']) migrated['openai-compatible'] = cleaned.secrets.apiKey;
+    delete migrated[DISCONTINUED_AI_PROVIDER];
     secureAiKeys = { ...secureAiKeys, ...migrated };
     writeSecureAiKeys(secureAiKeys);
     fs.unlinkSync(legacyPath);
   } catch (error) { console.warn('[main] AI key migration failed:', error.message); }
+}
+
+function removeDiscontinuedSecureAiKeys() {
+  if (!Object.hasOwn(secureAiKeys, DISCONTINUED_AI_PROVIDER)) return;
+  delete secureAiKeys[DISCONTINUED_AI_PROVIDER];
+  if (safeStorage.isEncryptionAvailable()) writeSecureAiKeys(secureAiKeys);
 }
 
 function createSplashWindow() {
@@ -651,6 +675,7 @@ async function startServer(effectivePort, apiToken) {
 app.whenReady().then(async () => {
   secureAiKeys = readSecureAiKeys();
   migrateLegacyAiKeys();
+  removeDiscontinuedSecureAiKeys();
   const splash = createSplashWindow();
   // Run preflight before starting server
   const preflight = await preFlightCheck();
@@ -695,13 +720,22 @@ ipcMain.handle('open-folder', async (_event, relativePath) => {
   return shell.openPath(resolvedPath);
 });
 
-ipcMain.handle('ai-key-status', async (_event, provider) => ({
-  available: safeStorage.isEncryptionAvailable(),
-  hasKey: Boolean(secureAiKeys[String(provider || '')]),
-  source: secureAiKeys[String(provider || '')] ? 'safeStorage' : 'none',
-}));
+function requireSupportedAiKeyProvider(provider) {
+  const id = String(provider || '').trim();
+  if (!isSupportedProvider(id)) throw new Error(`不支援的 AI 供應商：${id || '(未設定)'}`);
+  return id;
+}
+
+ipcMain.handle('ai-key-status', async (_event, provider) => {
+  const id = requireSupportedAiKeyProvider(provider);
+  return {
+    available: safeStorage.isEncryptionAvailable(),
+    hasKey: Boolean(secureAiKeys[id]),
+    source: secureAiKeys[id] ? 'safeStorage' : 'none',
+  };
+});
 ipcMain.handle('ai-key-save', async (_event, provider, apiKey) => {
-  const id = String(provider || 'openai-compatible');
+  const id = requireSupportedAiKeyProvider(provider);
   const value = String(apiKey || '').trim();
   if (!value) throw new Error('API Key 不可為空白');
   secureAiKeys[id] = value;
@@ -709,7 +743,8 @@ ipcMain.handle('ai-key-save', async (_event, provider, apiKey) => {
   return { ok: true, hasKey: true, source: 'safeStorage' };
 });
 ipcMain.handle('ai-key-clear', async (_event, provider) => {
-  delete secureAiKeys[String(provider || '')];
+  const id = requireSupportedAiKeyProvider(provider);
+  delete secureAiKeys[id];
   writeSecureAiKeys(secureAiKeys);
   return { ok: true, hasKey: false, source: 'none' };
 });
@@ -759,14 +794,15 @@ ipcMain.handle('save-project-file', async (_event, project = {}) => {
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
+  const migrated = migrateImportedProject(project);
   const payload = {
     fileType: 'offline-subtitle-factory-project',
     version: 1,
     savedAt: new Date().toISOString(),
-    project,
+    project: migrated.project,
   };
   fs.writeFileSync(result.filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-  return { ok: true, filePath: result.filePath };
+  return { ok: true, filePath: result.filePath, migrationNotice: migrated.migrated ? AI_PROVIDER_MIGRATION_NOTICE : '' };
 });
 
 ipcMain.handle('open-project-file', async () => {
@@ -785,7 +821,8 @@ ipcMain.handle('open-project-file', async () => {
   if (payload.fileType !== 'offline-subtitle-factory-project' || !payload.project) {
     throw new Error('不是有效的離線字幕工廠專案檔');
   }
-  return { ok: true, filePath, project: payload.project };
+  const migrated = migrateImportedProject(payload.project);
+  return { ok: true, filePath, project: migrated.project, migrationNotice: migrated.migrated ? AI_PROVIDER_MIGRATION_NOTICE : '' };
 });
 
 ipcMain.handle('open-settings-file', async (_event, filePath) => {

@@ -49,7 +49,15 @@
 
 ## 多語言 LLM 開發中驗證
 
-## REL-040 0.50.1 AI response repair patch release preparation
+## REL-041 0.51.0 LM Studio removal preparation
+
+- 目前候選版本：`0.51.0`；0.50.1 preparation 已取消／未發布並由本版取代。既有 `v0.50.0` tag、Release 與資產不得修改。
+- Active provider scope：保留 Ollama、OpenAI、OpenAI-compatible、Azure、Groq、Gemini；移除 LM Studio registry／adapter／UI／default endpoint／local discovery／LM-only schema special case。通用 JSON Schema 與 Ollama one-shot repair 必須保留。
+- Migration scope：啟動、project import/export 與 browser localStorage 遇到 LM Studio 時清除該 provider 的 endpoint、model、capabilities、secret reference、profile，回到未選擇狀態並顯示一次通知；其他 provider 與 secrets 保留，重跑不得重啟 provider。
+- Regression scope：registry／UI／API rejection、startup migration、secret preservation、idempotence、old import behavior、Ollama parser／one-shot repair／failed checkpoint、Markdown JSON、text parts、nested arrays、non-local strict failure 與 generic JSON Schema preservation。
+- Live provider scope：不在 automated release preparation 中下載模型或啟動服務；沒有使用者已授權 endpoint 時標示 `LIVE_PROVIDER_TESTS=NOT_RUN`，不得以 deterministic mock 取代 live acceptance。
+
+## REL-040 0.50.1 AI response repair patch release preparation（歷史；已取消／由 REL-041 取代）
 
 - 來源與版本：release branch `codex/release-0.50.1` 由 `main` `a111ddd4abe7b7b6854f9b1c483a0c11a1f8840e` 建立；`app/package.json`／`app/package-lock.json` 目標版本為 `0.50.1`；PR #1 的五個原始 commit 不再次 merge 或 cherry-pick。
 - 修正範圍：本機 AI 回應缺少 `cues` 的單次格式修復、Markdown-wrapped JSON、跨 text parts 組合、nested wrapper root-array 邊界、LM Studio JSON Schema `response_format` 保留與 failed-repair checkpoint 保護。
@@ -272,11 +280,11 @@
 - 完整：受控 `npm run check` 通過；兩平台測試包關鍵 AI runtime marker 與工作樹一致，macOS／Windows ZIP `unzip -t` 均通過。
 - 未覆蓋：Windows 實機 Ollama／Azure endpoint、真實模型回應、安裝後啟動與跨版本行為；GitHub commit 核對與 contract mock 不取代實機驗收。
 
-## 0.48 本機 LLM 驗證計畫
+## 0.48 本機 LLM 驗證計畫（歷史；LM Studio provider 已移除）
 
-- `test-ai-providers.mjs`：驗證 Ollama／LM Studio registry、loopback IPv4／IPv6、localhost 子網域拒絕、無 Key 不送 Authorization、遠端本機-provider 名稱仍不得繞過 Key，以及模型能力回應解析。
+- `test-ai-providers.mjs`（歷史 0.48 計畫）：曾驗證 Ollama／LM Studio registry；0.51.0 現行測試改驗證 Ollama registry 與 LM Studio 明確拒絕。
 - `test-review-ui.mjs`：驗證本機 provider 選項、服務掃描、模型清單、能力檢查、隱私狀態與 loopback 無 Key 連線表單。
-- `test-core.mjs`：以本機 fake OpenAI-compatible server 分別驗證 Ollama 的無 Key／無雲端同意設定、模型列表、連線、有效與無效模型能力回應、redirect 第二站零請求，以及 LM Studio 的完整 AI 批次、429 重試、無 checkpoint／有 checkpoint 取消時關閉 HTTP 請求、取消後只續跑未完成批次與 cue 契約。
+- `test-core.mjs`：以本機 fake OpenAI-compatible server 驗證 Ollama 的無 Key／無雲端同意設定、模型列表、連線、有效與無效模型能力回應、redirect 第二站零請求、完整 AI 批次與取消／checkpoint 契約；另驗證已移除 LM Studio 的 API rejection 與啟動 migration。
 - macOS 預封裝：`runtime:manifest:mac`、`runtime:verify:mac` 與 `electron:build:mac:dir` 已通過；`verify-electron-renderer.mjs` 已在產出的 arm64 App 驗證 Electron bridge、設定 modal、上傳／啟動／完成、review AI 資產、術語 round-trip，以及七個 provider（含 Ollama／LM Studio）。此證據僅涵蓋目前主機的未簽章目錄版，不等同 DMG 安裝後驗收。
 - Windows 預封裝：`runtime:manifest`、`runtime:verify` 與 `electron:build:dir` 已成功產出 `dist/win-unpacked` 及 Windows x64 executable；本機為 macOS，未直接啟動 Windows renderer，故不等同 Windows 實機安裝後驗收。
 - Windows 發布資產：`electron:build:unsigned` 已建立 x64 Setup 與 Portable；兩者均由 `file` 識別為 PE32 NSIS executable。Setup SHA-256 為 `d05a3f8d4df31048d398839666f34954c523f6928bc2500a1d98a785f7a20955`，Portable SHA-256 為 `3a1ad56e0b6e914151e7f3447966d104c426544245e68e455d5df49eaeddf1f6`；未簽章且未在 Windows 實機安裝／啟動。

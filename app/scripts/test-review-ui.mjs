@@ -6,6 +6,7 @@ import { isLoopbackAiUrl, providerProfileMatches, providerProfileSnapshot, runPr
 import { selectAiCues } from '../public/ai-scope.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const indexHtml = fs.readFileSync(path.join(appDir, 'public', 'index.html'), 'utf8');
 const html = fs.readFileSync(path.join(appDir, 'public', 'review.html'), 'utf8');
 const css = fs.readFileSync(path.join(appDir, 'public', 'styles.css'), 'utf8');
 const js = fs.readFileSync(path.join(appDir, 'public', 'review.js'), 'utf8');
@@ -53,7 +54,8 @@ assert.match(js, /state\.aiSuggestions\.clear\(\)[\s\S]{0,120}updateAiSuggestion
 assert.match(html, /<option value="groq">Groq<\/option>/);
 assert.match(html, /<option value="gemini">Google Gemini<\/option>/);
 assert.match(html, /<option value="ollama">Ollama（本機）<\/option>/);
-assert.match(html, /<option value="lm-studio">LM Studio（本機）<\/option>/);
+assert.match(html, /<option value="">未選擇<\/option>/);
+assert.doesNotMatch(html, /value="lm-studio"|LM Studio（本機）/);
 assert.match(html, /id="discoverLocalAi"/);
 assert.match(html, /id="loadAiModels"/);
 assert.match(html, /id="inspectAiModel"/);
@@ -65,6 +67,8 @@ assert.match(providerFormJs, /請先輸入 API Key 並儲存設定/);
 assert.match(js, /ai\/key\?provider=/);
 assert.match(js, /keyInput\.dataset\.hasKey = 'false'/);
 assert.match(html, /<script type="module" src="\/review\.js"><\/script>/);
+assert.match(indexHtml, /<script type="module" src="app\.js"><\/script>/);
+assert.doesNotMatch(indexHtml, /<script src="app\.js"><\/script>/);
 assert.match(js, /runProviderConnectionTest\(\{/);
 assert.match(js, /回應文字過長，正在要求 Ollama 重新輸出/);
 

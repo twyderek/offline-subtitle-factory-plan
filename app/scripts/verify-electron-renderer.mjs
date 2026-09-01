@@ -9,6 +9,7 @@ const exePath = process.argv[2];
 const port = Number(process.argv[3] || 9235);
 const timeoutMs = Number(process.argv[4] || 30000);
 const trimMediaPath = process.argv[5] || '';
+const devToolsCallTimeoutMs = Math.max(30000, timeoutMs);
 
 if (!exePath) {
   throw new Error('Usage: node scripts/verify-electron-renderer.mjs <exe-path> [debug-port]');
@@ -108,7 +109,7 @@ async function connectWebSocket(wsUrl) {
         const timer = setTimeout(() => {
           pending.delete(messageId);
           reject(new Error(`Timed out waiting for DevTools method ${method}`));
-        }, 15000);
+        }, devToolsCallTimeoutMs);
         pending.set(messageId, { resolve, timer });
       });
     },
@@ -241,7 +242,9 @@ try {
   });
 
   const rendererJobId = evaluateValue(uploadFlow)?.jobId;
-  if (!rendererJobId) throw new Error('Renderer upload flow did not return a job ID');
+  if (!rendererJobId) {
+    throw new Error(`Renderer upload flow did not return a job ID: ${JSON.stringify(evaluateValue(uploadFlow))}`);
+  }
   const aiReviewAssets = await client.call('Runtime.evaluate', {
     awaitPromise: true,
     returnByValue: true,
@@ -375,7 +378,7 @@ try {
   if (!result.aiReviewAssets.hasSelectionUi || !result.aiReviewAssets.hasSessionUi || !result.aiReviewAssets.hasSecureKeyUi) throw new Error('Packaged 0.45 AI review controls are missing');
   if (!result.aiReviewAssets.hasCollapsibleAiUi) throw new Error('Packaged 0.45.1 collapsible AI toolbar is missing');
   if (!result.aiReviewAssets.glossaryRoundTrip) throw new Error('Packaged glossary settings did not round-trip');
-  if (!['openai', 'openai-compatible', 'azure', 'groq', 'gemini', 'ollama', 'lm-studio'].every((id) => result.aiReviewAssets.providerIds.includes(id))) throw new Error('Packaged provider definitions are incomplete');
+  if (!['openai', 'openai-compatible', 'azure', 'groq', 'gemini', 'ollama'].every((id) => result.aiReviewAssets.providerIds.includes(id))) throw new Error('Packaged provider definitions are incomplete');
   if (trimMediaPath) {
     if (result.packagedTrimFlow.createStatus !== 201 || result.packagedTrimFlow.planStatus !== 200 || result.packagedTrimFlow.applyStatus !== 202) throw new Error('Packaged real trim flow could not start');
     if (result.packagedTrimFlow.trimStatus !== 'completed' || Math.abs(result.packagedTrimFlow.trimDuration - 2) > 0.5) throw new Error('Packaged real trim output is invalid');

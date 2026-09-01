@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createProvider, listProviderDefinitions } from '../lib/ai/providers.mjs';
+import { createProvider, isSupportedProvider, listProviderDefinitions } from '../lib/ai/providers.mjs';
 import { aiEndpointPrivacy, isLoopbackAiUrl } from '../lib/ai/local-ai.mjs';
 import { inspectModelCapabilities, modelContextLength, parseCapabilityProbe } from '../lib/ai/model-capabilities.mjs';
 import { glossaryToCsv, normalizeProjectAiSettings, parseGlossaryCsv } from '../lib/ai/project-tools.mjs';
@@ -17,7 +17,9 @@ globalThis.fetch = providerMockFetch;
 
 try {
   const definitions = listProviderDefinitions();
-  assert.deepEqual(definitions.map((item) => item.id).sort(), ['azure', 'gemini', 'groq', 'lm-studio', 'ollama', 'openai', 'openai-compatible']);
+  assert.deepEqual(definitions.map((item) => item.id).sort(), ['azure', 'gemini', 'groq', 'ollama', 'openai', 'openai-compatible']);
+  assert.equal(isSupportedProvider('lm-studio'), false, '已移除的 LM Studio provider 不得仍在 registry');
+  assert.throws(() => createProvider({ provider: 'lm-studio' }), /不支援的 AI 供應商/, '明確指定 LM Studio 必須拒絕且不得 fallback');
 
   for (const provider of ['openai', 'openai-compatible', 'groq']) {
     const adapter = createProvider({ provider, baseUrl: 'https://example.test/v1', apiKey: `key-${provider}`, model: 'test-model' });
@@ -74,7 +76,7 @@ try {
   assert.match(groqRequest.url, /\/models$/);
   assert.equal(groqRequest.options.headers.Authorization, 'Bearer groq-key');
 
-  for (const [provider, baseUrl] of [['ollama', 'http://127.0.0.1:11434/v1'], ['lm-studio', 'http://localhost:1234/v1']]) {
+  for (const [provider, baseUrl] of [['ollama', 'http://127.0.0.1:11434/v1']]) {
     const local = createProvider({ provider, baseUrl, apiKey: '', model: 'test-model' });
     assert.equal((await local.test()).ok, true, `${provider} loopback 不應強制 API Key`);
     assert.equal(requests.at(-1).options.headers.Authorization, undefined, `${provider} 無 Key 時不得送出空 Authorization`);

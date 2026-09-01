@@ -14,7 +14,25 @@ const serverSourceForAssertions = fs.readFileSync(path.join(appDir, 'server.mjs'
 assert.match(serverSourceForAssertions, /state\.error = null;\s*state\.cancelRequested = false;\s*state\.message = 'Breeze ASR 25 已準備完成'/, 'managed runtime successful retry must clear stale cancellation state');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offline-subtitle-test-'));
 fs.mkdirSync(path.join(dataDir, 'config'), { recursive: true });
-fs.writeFileSync(path.join(dataDir, 'config', 'settings.json'), JSON.stringify({ appLanguage: 'zh-CN', ai: { language: 'invalid legacy value' } }));
+fs.writeFileSync(path.join(dataDir, 'config', 'settings.json'), JSON.stringify({
+  appLanguage: 'zh-CN',
+  ai: {
+    provider: 'lm-studio',
+    enabled: true,
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'legacy-lm-model',
+    apiKey: 'legacy-lm-key-must-be-removed',
+    capabilities: { jsonSchema: true, structuredOutput: 'json-schema' },
+    profiles: {
+      'lm-studio': { baseUrl: 'http://127.0.0.1:1234/v1', model: 'legacy-lm-model' },
+      ollama: { baseUrl: 'http://127.0.0.1:11434/v1', model: 'keep-ollama' },
+    },
+    language: 'invalid legacy value',
+  },
+}));
+fs.writeFileSync(path.join(dataDir, 'config', 'ai-secrets.json'), JSON.stringify({
+  providers: { 'lm-studio': 'legacy-lm-secret-must-be-removed', 'openai-compatible': 'keep-openai-secret' },
+}));
 fs.mkdirSync(path.join(dataDir, 'config', 'breeze-asr'), { recursive: true });
 fs.writeFileSync(path.join(dataDir, 'config', 'breeze-asr', 'breeze-asr-25.pt'), 'deterministic Breeze mock checkpoint');
 const port = 19000 + Math.floor(Math.random() * 1000);
@@ -280,6 +298,16 @@ try {
   const legacySettings = await legacySettingsResponse.json();
   assert.equal(legacySettings.ai.language, 'zh-TW', '舊設定檔的非法語言值應在啟動時安全回退繁中');
   assert.equal(legacySettings.appLanguage, 'zh-TW', '舊設定檔的簡體中文介面語言應安全回退繁中');
+  assert.equal(legacySettings.ai.provider, '', '啟動 migration 應將 LM Studio 設定改為未選擇');
+  assert.equal(legacySettings.ai.enabled, false, '停用的 LM Studio 設定不可保持啟用');
+  assert.equal(legacySettings.ai.baseUrl, '', '啟動 migration 不得保留 LM Studio endpoint');
+  assert.equal(legacySettings.ai.model, '', '啟動 migration 不得保留 LM Studio model');
+  assert.equal(legacySettings.ai.profiles.ollama.model, 'keep-ollama', '啟動 migration 應保留其他 provider profile');
+  assert.equal(legacySettings.ai.profiles['lm-studio'], undefined, '啟動 migration 不得保留 LM Studio profile');
+  assert.match(legacySettings.ai.migrationNotice, /LM Studio 已停止支援/);
+  const migratedStartupSecrets = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'ai-secrets.json'), 'utf8'));
+  assert.equal(migratedStartupSecrets.providers['lm-studio'], undefined, '啟動 migration 不得保留 LM Studio secret');
+  assert.equal(migratedStartupSecrets.providers['openai-compatible'], 'keep-openai-secret', '啟動 migration 應保留其他 provider secret');
 
   const providerSettingsModuleResponse = await api('/ai-provider-settings.mjs');
   assert.equal(providerSettingsModuleResponse.status, 200, 'AI provider 表單狀態模組應可由 renderer 載入');
@@ -404,6 +432,20 @@ try {
     body: JSON.stringify({ ...loadedAiSettings.settings, provider: 'unsupported-provider' }),
   });
   assert.equal(invalidProviderResponse.status, 400, 'AI 設定 API 應明確拒絕不支援的供應商');
+
+  const removedProviderGeneralResponse = await api('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ai: { ...loadedAiSettings.settings, provider: 'lm-studio' } }),
+  });
+  assert.equal(removedProviderGeneralResponse.status, 400, '一般設定 API 也必須拒絕已移除的 LM Studio provider');
+
+  const removedProviderResponse = await api('/api/ai/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...loadedAiSettings.settings, provider: 'lm-studio', enabled: false }),
+  });
+  assert.equal(removedProviderResponse.status, 400, '明確指定已移除的 LM Studio provider 應拒絕且不得 fallback');
 
   const invalidProfileResponse = await api('/api/ai/profile?provider=unsupported-provider');
   assert.equal(invalidProfileResponse.status, 400, 'AI profile API 不可把非法供應商無聲回退到目前供應商');
@@ -596,7 +638,7 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       enabled: true,
-      provider: 'lm-studio',
+      provider: 'ollama',
       baseUrl: `http://127.0.0.1:${fakeAiPort}/v1`,
       model: 'test-model',
       batchSize: 1,
@@ -607,7 +649,7 @@ try {
       instructions: '測試可靠性',
     }),
   });
-  assert.equal(enabledAiSettingsResponse.status, 200, 'LM Studio 可靠性測試設定應可在無專屬 Key 下啟用');
+  assert.equal(enabledAiSettingsResponse.status, 200, 'Ollama 可靠性測試設定應可在無專屬 Key 下啟用');
   const reliabilityCues = [
     { id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '第一段' },
     { id: 2, start: '00:00:01,000', end: '00:00:02,000', text: '第二段' },
@@ -627,7 +669,7 @@ try {
   assert.equal(retriedAi.status, 'completed', retriedAi.error);
   assert.equal(retriedAi.result.totalRetries, 1, '429 應依設定完成一次自動重試');
   assert.equal(retriedAi.result.changedCues, 2);
-  assert.equal(retriedAi.provider, 'lm-studio', 'LM Studio 應完成完整字幕優化流程');
+  assert.equal(retriedAi.provider, 'ollama', 'Ollama 應完成完整字幕優化流程');
 
   fakeAiMode = 'slow';
   fakeAiCalls = 0;
@@ -635,7 +677,7 @@ try {
   const slowAiResponse = await api(`/api/jobs/${created.jobId}/ai-optimize`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cues: reliabilityCues, mode: 'proofread' }),
   });
-  assert.equal(slowAiResponse.status, 202, 'LM Studio 慢速任務應可啟動');
+  assert.equal(slowAiResponse.status, 202, 'Ollama 慢速任務應可啟動');
   await waitFor(() => fakeAiCalls > 0, '慢速 AI 請求未抵達本機模型服務');
   const cancelAiResponse = await api(`/api/jobs/${created.jobId}/cancel-ai-optimize`, { method: 'POST' });
   assert.equal(cancelAiResponse.status, 200, '進行中的本機 AI 任務應可取消');

@@ -1,8 +1,34 @@
 # 改版與工作紀錄
 
-## 2026-09-01 — Offline Subtitle Factory 0.50.1 release preparation rerun and closeout（REL-040）
+## 2026-09-01 — Offline Subtitle Factory 0.51.0 LM Studio provider removal preparation（REL-041）
 
 - 狀態：完成
+- 結案判定：停止 0.50.1 未發布流程，從指定 `main` 基準建立 `codex/remove-lm-studio`，移除 LM Studio active provider 並完成 0.51.0 candidate 的程式、migration、測試、文件與 workflow 準備；不建立 tag／GitHub Release、不修改 `v0.50.0`
+- 審查／交付屬性：breaking provider removal；建立 review PR 前的候選分支準備，不自動合併
+- 執行者：Codex
+- 需求來源：需求方要求完整移除 LM Studio provider、把下一候選版本調整為 0.51.0、保留 Ollama parser repair 與安全 migration，並停止 0.50.1 release preparation
+- 關聯需求／缺陷：`REL-041`、`FR-021`、AI response parser nested wrapper P1、provider registry／設定 migration
+- 變更等級：重大（provider compatibility breaking change、設定 migration、版本與發布 metadata）
+- 執行前已讀：`AGENTS.md`、`app/AGENTS.md`、project-management README、current status、requirements／functional design、test／release／build／document-closeout workflows 與既有 `v0.50.0` 發布邊界
+- 來源基準：`main` `0091663a26456aa265e6763a7fdaddb23eb4570a`；未從 `codex/release-0.50.1` 或 `codex/ai-cues-response-repair` 建立，未重複 merge／cherry-pick 舊分支 commit
+- 目標與成功條件：移除 LM Studio registry／UI／adapter／default endpoint／local discovery／LM-only schema 特例；啟動／匯入／localStorage migration 回到未選擇且不刪其他 provider；版本與 active workflow 指向 0.51.0；Ollama parser／repair、generic JSON Schema、strict non-local、failed checkpoint 與完整回歸通過
+- 不在範圍：不建立 `v0.50.1` 或 `v0.51.0` tag；不建立或發布 GitHub Release；不修改 `v0.50.0`；不下載模型、不啟動未授權服務、不傳送真實字幕到外部雲端；不清理既有 user-owned untracked artifacts
+- 預計影響檔案／模組：AI provider registry／optimizer／server／Electron key migration、renderer UI、provider migration helpers、AI regression tests、package／workflow、README／設定手冊／provider matrix／project-management release records
+- 風險與回復方式：provider removal 可能破壞舊設定或誤刪其他 secrets；以 startup／import／localStorage migration、idempotence、explicit rejection 與 preserve-other-provider tests 防護；若 static／full tests／docs／runtime checks 失敗則停止 push／PR，保留 v0.50.0 與既有未追蹤資料
+- 驗證計畫：`npm ci`、指定 source syntax、AI parser／migration／optimizer／provider／Ollama streaming／AI fetch tests、`npm run docs:check`、`npm run check`、`npm run docs:check:final`、`npm run runtime:manifest`、`npm run runtime:verify`、`git diff --check`，並執行 active／historical residual reference classification
+- 授權背景：需求方明確要求建立並推送此候選 branch、完成程式與文件準備並建立 review PR；本輪不授權建立任何 tag／Release 或合併
+- 實際修改與驗證結果：移除 active LM Studio provider 與 LM-only response-format path；加入 server／Electron／project／browser storage migration 及 exact notice；保留 Ollama one-shot repair、shared JSON extraction、nested wrapper rejection 與 generic JSON Schema；同步 package／lock、UI、workflow、0.51.0 release notes、README、設定手冊、support matrix、status／history／audit。focused tests、完整 `npm run check`、`npm run docs:check`、`npm run docs:check:final`、runtime manifest／verify、`npm ci`（0 vulnerabilities）與 `git diff --check` 均 exit 0。Live provider 未啟動，`LIVE_PROVIDER_TESTS=NOT_RUN`；未建立 tag／Release，未修改 v0.50.0。
+- 獨立審查是否執行：是（round1）
+- round1 審查檔案：`docs/project-management/reviews/2026-09-01-remove-lm-studio-round1.md`
+- round1 判定（逐字引用完整結論句）：**本輪獨立審查確認 0.51.0 已移除 LM Studio active provider、完成舊設定安全 migration、保留 Ollama parser／one-shot repair、通過 provider／parser／core regression 與文件／runtime checks，且未修改 v0.50.0；但 live provider、clean-machine、signed／notarized packaging 與 public release 尚未驗收，因此只可進入 review，不能直接建立 tag 或 GitHub Release。**
+- round1 條件是否已被需求方接受：是（review PR 可供審查；live provider、clean-machine、signed／notarized packaging 與公開發布仍需後續明確驗收／核准）
+- 發布授權：不適用（本輪僅候選 branch、commit、push 與 review PR；不建立 tag／GitHub Release、不合併）
+- 遺留風險與後續事項：`LIVE_PROVIDER_TESTS=NOT_RUN`；需在公開發布前由使用者完成 Ollama live acceptance、Windows／macOS clean-machine packaging、簽章／公證與 0.51.0 release asset 核對。Residual LM references 僅限 migration code、negative tests、0.51.0 removal note 與已標示 historical／cancelled 的舊 audit／evidence；下一步 push `codex/remove-lm-studio` 並建立標題為 `breaking: remove LM Studio provider support` 的 review PR，等待人工審查。
+
+## 2026-09-01 — Offline Subtitle Factory 0.50.1 release preparation rerun and closeout（REL-040，歷史；已取消／由 REL-041 取代）
+
+- 狀態：完成
+- 發布狀態：未發布；0.50.1 candidate 已取消，由 0.51.0 breaking candidate 取代；本條目與其 evidence 保留為歷史稽核，不代表目前 active release metadata。
 - 結案判定：重新執行 0.50.1 source／package／installer／文件驗證，修正 Windows CRLF 下 `docs:check:final` 的治理 parser 相容性，完成 release PR #2 說明更新；不建立 tag／GitHub Release
 - 審查／交付屬性：release preparation closeout；沿用已由指定 `main` base 建立的 `codex/release-0.50.1`，不重建 branch、不回合併 `codex/ai-cues-response-repair`
 - 執行者：Codex

@@ -77,9 +77,7 @@ function buildSubtitleSchema(count, ids) {
 }
 
 function buildResponseFormat(config, batch) {
-  const provider = String(config?.provider || '').toLowerCase();
-  const usesJsonSchema = config?.capabilities?.structuredOutput === 'json-schema'
-    || (provider === 'lm-studio' && config?.capabilities?.structuredOutput == null && config?.capabilities?.jsonSchema !== false);
+  const usesJsonSchema = config?.capabilities?.structuredOutput === 'json-schema';
   if (usesJsonSchema) return buildSubtitleSchema(batch.length, batch.map((cue) => cue.id));
   if (config?.capabilities?.jsonSchema !== false) return { type: 'json_object' };
   return undefined;
@@ -352,12 +350,12 @@ async function completeWithRetry({ complete, body, signal, config, batchIndex, p
 }
 
 function canRepairTranslationValidation(error, config) {
-  if (!['ollama', 'lm-studio'].includes(String(config?.provider || '').toLowerCase())) return false;
+  if (String(config?.provider || '').toLowerCase() !== 'ollama') return false;
   return /翻譯語言與輸出語言|翻譯內容過短|模型說明文字|JSON/.test(String(error?.message || ''));
 }
 
 function canRepairLocalJson(error, config) {
-  if (!['ollama', 'lm-studio'].includes(String(config?.provider || '').toLowerCase())) return false;
+  if (String(config?.provider || '').toLowerCase() !== 'ollama') return false;
   return ['invalid_json', 'missing_cues'].includes(String(error?.code || ''));
 }
 
