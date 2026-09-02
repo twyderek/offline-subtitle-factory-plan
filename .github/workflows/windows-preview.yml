@@ -1,4 +1,4 @@
-name: Build Windows 0.51.0
+name: Build Windows 0.51.1
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ on:
       - main
   push:
     branches:
-      - codex/release-0.51.0
+      - codex/release-0.51.1-preparation
     tags:
-      - v0.51.0
+      - v0.51.1
 
 permissions:
   contents: read
@@ -62,8 +62,8 @@ jobs:
       - name: Verify Windows packaged renderer and install lifecycle
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem ../dist -Filter '*setup-0.51.0.exe' -File | Select-Object -First 1).FullName
-          $portable = (Get-ChildItem ../dist -Filter '*portable-0.51.0.exe' -File | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem ../dist -Filter '*setup-0.51.1.exe' -File | Select-Object -First 1).FullName
+          $portable = (Get-ChildItem ../dist -Filter '*portable-0.51.1.exe' -File | Select-Object -First 1).FullName
           if (-not $setup -or -not $portable) { throw 'Setup 或 Portable artifact 不存在。' }
           powershell -ExecutionPolicy Bypass -File scripts/verify-windows-installation.ps1 `
             -SetupPath $setup `
@@ -92,9 +92,16 @@ jobs:
             }
           }
 
-          $releaseNotes = '../dist/win-unpacked/resources/app/RELEASE-NOTES-0.51.0.md'
+          $releaseNotes = '../dist/win-unpacked/resources/app/RELEASE-NOTES-0.51.1.md'
           if (-not (Test-Path -LiteralPath $releaseNotes -PathType Leaf)) {
-            throw 'Packaged 0.51.0 release notes are missing.'
+            throw 'Packaged 0.51.1 release notes are missing.'
+          }
+          $releaseNotesContent = Get-Content -LiteralPath $releaseNotes -Raw
+          if ($releaseNotesContent -notmatch '本機 patch release candidate') {
+            throw 'Packaged release notes are not the 0.51.1 candidate notes.'
+          }
+          if ($releaseNotesContent -match '尚未建立 `v0\.51\.0` tag') {
+            throw 'Packaged release notes contain stale 0.51.0 candidate text.'
           }
 
           $breezeGuide = '../dist/win-unpacked/resources/app/docs/BREEZE-ASR-25.md'
@@ -112,9 +119,37 @@ jobs:
             throw 'Breeze checkpoint must remain an optional external download and must not enter the release package.'
           }
 
+          $latestMetadata = Get-Content -LiteralPath '../dist/latest.yml' -Raw
+          if ($latestMetadata -notmatch '(?m)^version: 0\.51\.1$') {
+            throw 'latest.yml does not identify package version 0.51.1.'
+          }
+          if ($latestMetadata -notmatch 'offline-subtitle-factory-setup-0\.51\.1\.exe') {
+            throw 'latest.yml does not identify the 0.51.1 Setup artifact.'
+          }
+          if ($latestMetadata -match '尚未建立 `v0\.51\.0` tag') {
+            throw 'latest.yml contains stale 0.51.0 candidate text.'
+          }
+
           $artifacts | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
             Set-Content ../dist/SHA256SUMS-windows-x64.txt -Encoding utf8
+
+          $assetRecords = @($artifacts | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            [ordered]@{ name = $_.Name; size = $_.Length; sha256 = $hash }
+          })
+          [ordered]@{
+            schemaVersion = 1
+            repository = $env:GITHUB_REPOSITORY
+            workflow = $env:GITHUB_WORKFLOW
+            runId = [int64]$env:GITHUB_RUN_ID
+            runAttempt = [int]$env:GITHUB_RUN_ATTEMPT
+            ref = $env:GITHUB_REF
+            sourceCommit = $env:GITHUB_SHA
+            runnerImage = $env:ImageOS
+            packageVersion = '0.51.1'
+            assets = $assetRecords
+          } | ConvertTo-Json -Depth 6 | Set-Content ../dist/BUILD-PROVENANCE-windows-x64.json -Encoding utf8
 
           $signatures = $artifacts | ForEach-Object { Get-AuthenticodeSignature $_.FullName }
           $allSigned = ($signatures | Where-Object Status -ne 'Valid').Count -eq 0
@@ -131,11 +166,12 @@ jobs:
           Copy-Item ../dist/latest.yml -Destination $uploadDir
           Copy-Item ../dist/SHA256SUMS-windows-x64.txt -Destination $uploadDir
           Copy-Item ../dist/SIGNING-STATUS-windows-x64.txt -Destination $uploadDir
+          Copy-Item ../dist/BUILD-PROVENANCE-windows-x64.json -Destination $uploadDir
 
       - name: Upload Windows preview artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: offline-subtitle-factory-0.51.0-windows-x64
+          name: offline-subtitle-factory-0.51.1-windows-x64
           path: |
             app/.artifacts/windows-x64/*
           if-no-files-found: error

@@ -232,4 +232,56 @@ await optimizeSubtitleCues({
 assert.equal(schemaRepairCalls, 2, 'Ollama generic JSON Schema response 缺少 cues 時應只 repair 一次');
 assert.deepEqual(schemaRepairRetry.response_format, schemaRepairInitial.response_format, 'Ollama repair 不得覆寫 generic JSON Schema response_format');
 
+async function testParserNoLanguageFenceAndCrLf() {
+  const content = `  \`\`\`\r\n${jsonObject}\r\n  \`\`\`  `;
+  const result = await optimizeWithContent(content, { provider: 'openai-compatible' });
+  assert.equal(result.suggestions[0].text, expectedCue.text, '無語言 Markdown fence、CRLF 與外圍空白應解析 JSON');
+}
+
+async function testParserIgnoresEmptyAndNonTextParts() {
+  const result = await optimizeWithContent([
+    { type: 'text', text: '' },
+    { type: 'image', image_url: 'image-not-text' },
+    { type: 'text' },
+    { type: 'text', text: null },
+    { type: 'text', text: jsonObject },
+  ], { provider: 'openai-compatible' });
+  assert.equal(result.suggestions[0].text, expectedCue.text, 'empty、missing、null 與非文字 parts 不得拒絕合法文字 response');
+}
+
+async function testParserNestedJsonStringAndCandidatePriority() {
+  const invalidCandidate = JSON.stringify({ cues: [{ id: 'WRONG', text: '錯誤候選', reason: '' }] });
+  const validNestedCandidate = JSON.stringify({ response: JSON.stringify({ cues: [expectedCue] }) });
+  const result = await optimizeWithContent(`前言含有 {不是 JSON}；第一個可 parse 但不符合 cue context：${invalidCandidate}；後續才是有效 nested JSON string：${validNestedCandidate}`, { provider: 'openai-compatible' });
+  assert.equal(result.suggestions[0].id, expectedCue.id, 'parser 不得接受第一個可 parse 但 context-invalid 的 JSON candidate');
+  assert.equal(result.suggestions[0].text, expectedCue.text);
+}
+
+async function testParserBoundsCyclicCandidates() {
+  const cyclic = {};
+  cyclic.self = cyclic;
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => optimizeWithContent(cyclic, { provider: 'openai-compatible' }),
+    (error) => error.code === 'missing_cues',
+    '循環 response candidate 應依 contract reject',
+  );
+  assert.ok(Date.now() - startedAt < 1000, '循環 candidate traversal 不得 hang');
+
+  let deeplyNested = { leaf: 'not cues' };
+  for (let index = 0; index < 128; index += 1) deeplyNested = { wrapper: deeplyNested };
+  const deepStartedAt = Date.now();
+  await assert.rejects(
+    () => optimizeWithContent(deeplyNested, { provider: 'openai-compatible' }),
+    (error) => error.code === 'missing_cues',
+    '超深 nested candidate 應依 bounded traversal contract reject',
+  );
+  assert.ok(Date.now() - deepStartedAt < 1000, '超深 candidate traversal 不得 hang');
+}
+
+await testParserNoLanguageFenceAndCrLf();
+await testParserIgnoresEmptyAndNonTextParts();
+await testParserNestedJsonStringAndCandidatePriority();
+await testParserBoundsCyclicCandidates();
+
 console.log('AI response parser regression tests passed.');

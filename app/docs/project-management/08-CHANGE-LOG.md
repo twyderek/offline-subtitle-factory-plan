@@ -1,5 +1,150 @@
 # 改版與工作紀錄
 
+## 2026-09-02 — Offline Subtitle Factory 0.51.1 Patch Release Preparation（PREP-0511-20260902）
+
+- 狀態：進行中
+- 結案判定：建立 0.51.1 patch candidate 的可追溯 source／版本／測試／封裝治理基準；不修改、不重建、不替換公開 `v0.51.0` tag／Release／assets，不建立公開 `v0.51.1` tag／Release。
+- 執行者：Codex 主要開發代理
+- 需求來源：需求方要求在 0.51.0 round6 conditional closeout 後，將 BUG-024、source regression、stale Release/package documentation、Windows packaged lifecycle evidence 與 public artifact provenance improvements 帶入新的 0.51.1 patch preparation。
+- 關聯需求／缺陷：`PREP-0511-20260902`、`REL-041`、`BUG-024`、`ACCEPT-051-PACKAGED-ROUND3-20260902`
+- 變更等級：高（版本與發布準備、測試／封裝／治理 workflow 變更；僅 preparation，不含公開發布）
+- 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件、round5／round6 report、BUG-024、macOS packaged evidence、Windows round3 evidence（是）
+- 來源基準：public `v0.51.0` peeled target `10b3044d31a5367a91faacea46b8def7ee103f7c`；先保留目前既有 remediation worktree 變更，再建立新的本機 `codex/` patch-preparation source identity。
+- 本輪目標：將已驗證 remediation 納入 `0.51.1` candidate；補上 embedded Release notes／latest metadata 狀態檢查與可回溯 provenance workflow 基準；完成 clean-source regression、封裝可得性核對、文件同步與獨立 review。
+- 不在範圍：不修改 `v0.51.0` tag／Release／assets、不 silent republish 0.51.0、不建立 `v0.51.1` public tag／GitHub Release、不把 Windows CI 當作 pristine Windows PASS、不把 digest match 當成 per-asset provenance VERIFIED。
+- 風險與回復方式：保留公開 0.51.0 的 exact baseline FAIL、Windows local／pristine `TEST_GAP`、public provenance `UNVERIFIED` 與歷史 stale metadata；若 0.51.1 clean source、package、CI 或治理 gate 任何一項失敗，candidate 維持 `NOT_READY`，不發布。
+- 驗證計畫：先核對 active version sources／workflow；建立 `codex/release-0.51.1-preparation` 本機分支並形成新 source identity；執行 Breeze、AI、clean-source `npm ci`／`npm run check`／docs final／diff、package embedded metadata regression；可得時核對 Windows CI／macOS package，最後由獨立上下文依九項 patch review 面向審查。
+- 獨立審查是否執行：是（完成 preparation 變更與驗證後建立 round1）
+- 發布授權：不適用（本輪僅本機 preparation；不建立公開 tag／Release／assets；未使用 `AUTH-2026-07-23-01` 執行發布）
+
+
+## 2026-09-02 — Offline Subtitle Factory 0.51.0 Packaged Acceptance Remediation round3（ACCEPT-051-PACKAGED-ROUND3-20260902）
+
+- 狀態：完成
+- 結案判定：remediation 文件／證據治理 closeout 有條件通過；修正後 remediation worktree regression 通過，Windows exact CI lifecycle 已取得證據；但公開 0.51.0 exact tag 的 clean-source fixture failure 仍可重現，public per-asset provenance 仍 UNVERIFIED，Windows 本機／pristine 實機未取得，package／latest.yml embedded candidate text 仍 stale；stable-release recommendation 維持 NO
+- 執行者：Codex 主要開發代理
+- 需求來源：需求方要求延續 0.51.0 Packaged Acceptance Remediation，依 round2 獨立複審收斂四項條件：Breeze clean-source root cause、Windows Setup／Portable／uninstall、公開 asset provenance、package／Release 文件一致性。
+- 關聯需求／缺陷：`ACCEPT-051-PACKAGED-ROUND3-20260902`、`ACCEPT-051-PACKAGED-20260902`、`REL-041`、Breeze runtime manager regression
+- 變更等級：高（可能涉及測試／治理文件與必要的最小 production contract 修正；不發布、不覆寫既有 Release／tag／asset）
+- 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件（是）
+- 來源基準：`10b3044d31a5367a91faacea46b8def7ee103f7c`／`v0.51.0`；保留工作樹既有 remediation、round1／round2 reports 與 evidence，不修改舊歷史報告。
+- 本輪範圍：先重現 exact clean-source `npm run check` 的 Breeze fixture 問題；查證 repository workflow、Actions artifact、Windows package lifecycle 可得性與 public Release per-asset provenance；僅在證據支持且不改變 0.51.0 public asset 語義時修正 current 文件／測試；建立 round3 獨立審查報告。
+- 不在範圍：不建立／移動／刪除 tag、不建立／修改／替換 GitHub Release 或公開 asset、不偷偷重新發布 0.51.0、不把沒有 Windows 實機的結果寫成 Windows PASS、不將重新建置 digest 差異直接判為 provenance mismatch。
+- 風險與回復方式：Windows 實機／CI artifact、per-asset upload provenance 或封裝內既有 release notes 若無法取得，維持 `TEST_GAP`／`UNVERIFIED` 並揭露影響；任何 source production behavior 修正若使既有 0.51.0 binary 不同源，版本建議改為 `RECOMMEND_0.51.1_PATCH`，本輪仍不發布。
+- 驗證計畫：保存 clean-source 基準與根因；執行 focused Breeze、`npm ci`、`npm run check`、`npm run docs:check`、`npm run docs:check:final`、`git diff --check`；唯讀查證 Windows workflow／Actions／Release chain；沿用 round2 macOS evidence；最後由獨立上下文依六面向建立 round3 review。
+- 獨立審查是否執行：是（round3／round4／round5／round6）
+- 發布授權：不適用（本輪不發布、不修改 GitHub Release／assets；`AUTH-2026-07-23-01` 僅作既有未簽章風險背景，不擴大本輪操作授權）
+- Exact-source baseline／root cause：clean `10b3044d31a5367a91faacea46b8def7ee103f7c` worktree 的 `node scripts/test-breeze-runtime-manager.mjs` 在 macOS arm64 host 第 125 行失敗；fixture 未指定 Windows x64 `arch`，resolver 依 `process.arch=arm64` 回傳 `null` 是 fail-closed 預期行為。
+- 實際修正／驗證：`scripts/test-breeze-runtime-manager.mjs` 的 Windows x64 positive fixtures 明確傳入 `arch: 'x64'`，增加 Windows arm64 `null` negative case；`lib/breeze-runtime-probe.mjs` 轉傳可選 `arch` seam。`npm ci`、Breeze focused tests、syntax、受控 `npm run check` 與 `git diff --check` 均 exit 0；首次 sandbox localhost bind `EPERM` 後依授權重跑通過。
+- Windows CI evidence：exact run `33483093931`／head SHA `10b3044d31a5367a91faacea46b8def7ee103f7c`／Windows 2022 job `99776892605` success；source regression、unsigned Setup／Portable build、Setup install／renderer、silent uninstall、Portable renderer、archive/content checks、SHA generation 與 artifact upload 均通過。Actions artifact `9790782830`／487020484 bytes／ZIP SHA-256 `4a69b338d509846b200504118023768106e3502402b6d9d9ac4d440b15e62793`。判定：`WINDOWS_CI_LIFECYCLE=PASS`、`LOCAL_WINDOWS_MACHINE=TEST_GAP`。
+- Public asset provenance：六項公開 Windows asset 已下載並與 GitHub API digest／size／公開 `SHA256SUMS-windows-x64.txt` 核對，`latest.yml` Setup SHA-512 亦一致；但 workflow 只上傳 Actions artifact，沒有 Release upload step，故 `PUBLIC_ASSET_PROVENANCE=UNVERIFIED`，不得改判 VERIFIED 或 MISMATCH。
+- 文件一致性：source `README.md`、`RELEASE-NOTES-0.51.0.md`、`00-CURRENT-STATUS.md` 已反映公開 Release／CI evidence／剩餘缺口；公開 `latest.yml` 與 exact 0.51.0 package embedded release notes 仍是 historical candidate text，分類為 `PACKAGE_EMBEDDED_DOC_STALE`，不回寫既有 public binary；若修正需重建 binary，僅建議 `RECOMMEND_0.51.1_PATCH`，本輪不發布。
+- round6 final gate（審查後）：`PUBLIC_0.51.0_EXACT_SOURCE_BASELINE=FAIL`；`CLEAN_REMEDIATION_WORKTREE_NPM_CHECK=PASS`；`SOURCE_ACCEPTANCE=CONDITIONAL`；`DETERMINISTIC_AI_ACCEPTANCE=PASS`；`OLLAMA_LIVE_SANITY=PASS_FROM_ROUND2`；`MACOS_PACKAGED_ACCEPTANCE=PASS_FROM_ROUND2`；`WINDOWS_CI_LIFECYCLE=PASS`；`WINDOWS_LOCAL_PRISTINE_ACCEPTANCE=TEST_GAP`；`WINDOWS_PACKAGED_ACCEPTANCE=CONDITIONAL`；`PACKAGED_APP_ACCEPTANCE=CONDITIONAL`；`PUBLIC_RELEASE_PROVENANCE=UNVERIFIED`；`DOCS_CHECK_FINAL=PASS`；`GOVERNANCE_CLOSEOUT=PASS_AFTER_ROUND6_DOCUMENT_CLOSEOUT`；`STABLE_RELEASE_RECOMMENDATION=NO`；版本建議 `RECOMMEND_0.51.1_PATCH`。
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-packaged-round3.md`
+- 審查判定（逐字引用報告完整結論句）：**本輪獨立 round3 審查確認 exact source identity、Breeze x64 positive／arm64 fail-closed 修正、macOS arm64 packaged evidence、Windows exact CI lifecycle 與公開六項 asset 的 size／digest／checksum／unsigned status 均有可回溯證據；但 exact `10b3044d…` clean-source test 仍可在 macOS arm64 host 於第 125 行失敗，修正尚在未提交 worktree，`docs:check:final` exit 1，Windows 本機／pristine 實機仍為 TEST_GAP，public per-asset provenance 仍 UNVERIFIED，且 public `latest.yml`／exact package embedded release notes 仍為 candidate text，因此本輪 packaged acceptance remediation 與治理 closeout 不通過，stable-release recommendation 維持 NO。**
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-packaged-round4.md`
+- round4 複審判定（逐字引用報告完整結論句）：**本輪 round4 確認修正後 remediation worktree 的完整 `npm run check` 已 PASS，Breeze x64 positive／arm64 fail-closed、exact Windows CI lifecycle PASS、macOS arm64 packaged evidence、public asset size／digest／checksum／unsigned status 與 changelog closeout draft 均有可回溯證據；但 public exact tag 的 clean-source baseline failure 不可回寫、`docs:check:final` 仍 exit 1、Windows 本機／pristine 實機仍為 TEST_GAP、public per-asset provenance 仍 UNVERIFIED，package／latest.yml stale candidate text 仍待 patch，故 remediation round4 與治理 final closeout 仍不通過，stable 0.51.0 gate 維持 NO，版本建議維持 `RECOMMEND_0.51.1_PATCH`。**
+- 條件是否已被需求方接受：是（Windows 本機／pristine、public per-asset provenance、exact public tag historical baseline 與 stale embedded documents 均保留為明確條件；此接受不等同 stable 0.51.0 放行；本輪繼續完成文件治理 closeout 複核）
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-packaged-round5.md`
+- round5 複審判定（逐字引用報告完整結論句）：**本輪 round5 確認 remediation worktree 的完整 `npm run check` PASS，Breeze x64 positive／arm64 fail-closed、macOS arm64 package、exact Windows CI lifecycle PASS、public asset size／digest／SHA256SUMS／latest.yml／unsigned status 與 changelog closeout draft 均有可回溯證據；但 exact public tag 的 clean-source baseline failure 仍可重現且不可回寫，Windows local／pristine 仍為 TEST_GAP，public per-asset provenance 仍 UNVERIFIED，public latest.yml／exact package embedded candidate text 仍 stale，且 `docs:check:final` 仍 exit 1，因此證據僅可有條件接受、治理 final closeout 與本輪獨立複審不通過，stable 0.51.0 gate 維持 NO，版本建議維持 `RECOMMEND_0.51.1_PATCH`。**
+- round5 條件是否已被需求方接受：是（exact public tag historical baseline、Windows local／pristine、public per-asset provenance 與 stale embedded documents 均明確保留為條件；本輪後續複審僅評估治理 closeout 是否可在不放行 stable 0.51.0 的前提下成立）
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-packaged-round6.md`
+- round6 複審判定（逐字引用報告完整結論句）：**本輪 round6 獨立審查判定 Offline Subtitle Factory 0.51.0 Packaged Acceptance Remediation 的文件／證據治理 closeout 可有條件通過：current remediation regression、Breeze x64 positive／arm64 fail-closed、macOS arm64 packaged evidence、exact Windows CI lifecycle 與 public asset size／digest／SHA256SUMS／latest.yml／unsigned status 均有可回溯紀錄，且 round5 的 exact public tag baseline FAIL、Windows local／pristine TEST_GAP、public per-asset provenance UNVERIFIED、public latest.yml／exact package embedded candidate text stale 等條件已由需求方明確接受；但這不等同 stable 0.51.0 放行，stable 0.51.0 gate 維持 NO，`docs:check:final` 目前仍因最新 changelog 引用 round5「不通過」而 exit 1，後續必須完成治理 validator 對 round6 條件性結論的可回溯收斂，並保留 `RECOMMEND_0.51.1_PATCH` 與 Windows/pristine/provenance/package-doc risks。**
+- round6 條件是否已被需求方接受：是（接受條件式 remediation 文件／證據治理 closeout，不代表 stable 0.51.0 放行；exact public tag baseline、Windows local／pristine、public per-asset provenance、stale package／metadata 與未簽章風險仍須持續揭露）
+- 遺留風險與後續事項：不得修改 `v0.51.0` tag／Release／assets；若要解除 exact source、embedded release notes 與 public metadata 條件，應將 BUG-024／本輪 source 修正形成新的可追溯 patch 版本並重新建置／驗證，另取得 Windows 本機／pristine evidence 與 Release upload provenance；本輪只完成 local remediation 與證據收斂，不發布 `0.51.1`。
+
+## 2026-09-02 — Offline Subtitle Factory 0.51.0 Packaged Acceptance Remediation（ACCEPT-051-PACKAGED-20260902）
+
+- 狀態：完成
+- 結案判定：同源 macOS arm64 acceptance-only package、provenance／checksum、內容、renderer／trim、LM Studio migration、packaged Ollama 與 round2 獨立複審完成；packaged acceptance 為 CONDITIONAL，stable-release recommendation 維持 NO
+- 執行者：Codex 主要開發代理
+- 需求來源：需求方要求延續 0.51.0 Acceptance Remediation，取得或建立與 `10b3044d31a5367a91faacea46b8def7ee103f7c` 完全一致的本機封裝並完成 packaged acceptance 收斂。
+- 關聯需求／缺陷：`ACCEPT-051-REMEDIATION-20260902`、`ACCEPT-051-PACKAGED-20260902`、packaged provenance `88da220` mismatch
+- 變更等級：高（本機 acceptance-only build、封裝驗收與治理 closeout；不發布、不修改 GitHub Release）
+- 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件（是）
+- 驗收來源：`10b3044d31a5367a91faacea46b8def7ee103f7c`；package version `0.51.0`；目前 `main` 工作樹含既有 remediation 變更，不直接用於 build。
+- 不在範圍：不升版、不建立／移動／刪除 tag、不修改既有 GitHub Release／assets、不覆寫使用者工作樹、不修改歷史 review／acceptance 結論、不下載 Ollama 模型。
+- 目標與成功條件：由乾淨同源 source 建立本機 acceptance-only package；保存 source／version／platform／arch／build command／asset size／SHA-256 provenance；完成 package contents、Setup／Portable／renderer、provider migration、Ollama packaged sanity、edge／uninstall 可行性核對、GitHub Release 比較與 round2 review。
+- 實際封裝：在 `/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d` 的 tracked-clean exact source 建立 macOS arm64 package；使用正式 `npm run electron:build:mac -- --config.directories.output=../dist/acceptance-0.51.0-10b3044d --publish never`，未發布、未建立／移動／刪除 tag，未修改 GitHub Release／assets。
+- Package evidence：ZIP `248256991` bytes，SHA-256 `7fad3032348d69315e124a855350abdecb96f7cd1e16af0530dc35559bd84a63`；DMG `241395503` bytes，SHA-256 `afc542a407d56c7a1bd65b52927094c93014169ae70c74028d210d9b578feca8`；blockmap `252953` bytes，SHA-256 `73a5e39379fd6e3ec0b79ca20107d18afe94ecf7f36d79f82d14fcaa15903918`。ZIP `unzip -t`、DMG `hdiutil verify`、deep strict ad-hoc codesign 均通過；embedded app version `0.51.0`、target `darwin-arm64`、FFmpeg 8.1.2、Whisper.cpp 1.9.1、Tiny model 與 source/server/renderer 均可核對。
+- Packaged smoke：renderer smoke 通過，包含 UI/API、manual SRT job、Breeze selection/cancel、AI review/provider registry、folder flow；以 package 內 FFmpeg 產生 4 秒暫存片完成 precise trim 1–3 秒、trimmed media 與字幕時間同步；Windows Setup／Portable／Uninstall 在 macOS host 無法可靠執行，標記 `TEST_GAP`。
+- AI packaged：active provider IDs 僅 `openai`、`openai-compatible`、`azure`、`groq`、`gemini`、`ollama`，`lm-studio` 僅保留 migration／歷史分類。隔離 profile 以 legacy LM Studio 設定與 openai／ollama secrets 啟動兩次，均回到 `provider=''`、`enabled=false`、移除 LM Studio profile，保留其他 secrets，legacy file 清除，migration idempotent。Ollama `http://127.0.0.1:11434/v1`／既有 `llama3.2:1b` 未 pull，經 packaged Electron UI → packaged server → optimizer → loopback → persisted session 完成 settings 200、test 200、job 201、start 202、final `completed`；3 cues、session source IDs `[1,2,3]`、無 changed suggestions，cue identity/order preserved without model-quality claim。
+- Public Release comparison：read-only `v0.51.0` tag object `746b6d01669a2555fa6a237890f86193a40eb7dc` peeled 至 exact source commit；Release public、non-draft、non-prerelease，六項遠端 asset digest 已記錄，但沒有 per-asset CI build provenance，故 `PUBLIC_ASSET_PROVENANCE=UNVERIFIED`、無 local same-name digest match。Package 內的舊 candidate／尚未建立 Release 狀態文字因 exact source freeze 未改寫，列為治理條件，不冒充 public package。
+- 回歸與文件：目前 remediation worktree 使用既有唯讀 arm64 tools 執行 `OFFLINE_SUBTITLE_TEST_TOOLS_DIR=/Users/nycu/Documents/離線字幕工廠/offline-subtitle-factory-app/tools npm run check` exit 0；精確 clean source `npm run check` 在 macOS arm64 host 的舊 Breeze fixture `scripts/test-breeze-runtime-manager.mjs:125` 失敗（未傳 `arch`，actual `null`），已記為 host-architecture TEST_GAP；clean exact source `npm run docs:check:final` 與 `git diff --check` 通過。新增 evidence：`docs/project-management/evidence/2026-09-02-acceptance-packaged-0510-macos-arm64.json`。
+- 驗證計畫：依 repository 正式 build workflow 與既有 packaging／verification scripts 完成；本條目結案後執行 `npm run docs:check:final`、`git diff --check`，並驗證 round2 獨立報告。
+- 獨立審查是否執行：是（round2）
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-packaged-round2.md`
+- 判定（逐字引用審查報告完整結論句）：**本輪 0.51.0 packaged acceptance round2 確認與 `10b3044d31a5367a91faacea46b8def7ee103f7c` 同源的 macOS arm64 package 已通過版本、內容、checksum、封裝完整性、renderer／trim、provider migration 與 packaged Ollama path 驗證；但 Windows Setup／Portable／uninstall lifecycle、exact clean-source `npm run check` 與 public per-asset build provenance 仍為 TEST_GAP／條件，且 package／public Release 文件狀態尚需一致化，因此僅可有條件通過，不得視為無條件穩定發布驗收。**
+- 條件是否已被需求方接受：是（需求明確允許目前平台無法可靠驗證的項目標為 `TEST_GAP`；本接受不等同 packaged acceptance 無條件通過或 stable release 放行）
+- 發布授權：不適用（本輪明確不發布、不建立／移動／刪除 tag、不修改 GitHub Release／assets；僅建立本機 acceptance-only package 與證據）
+- Final gate：`SOURCE_COMMIT=10b3044d31a5367a91faacea46b8def7ee103f7c`；`PACKAGE_PROVENANCE=VERIFIED_FROM_CLEAN_SOURCE_COMMIT_AND_FORMAL_MAC_WORKFLOW`；`SETUP_SMOKE=TEST_GAP`；`PORTABLE_SMOKE=TEST_GAP`；`RENDERER_SMOKE=PASS`；`UNINSTALL_SMOKE=TEST_GAP`；`LM_STUDIO_ACTIVE_REMOVAL=PASS`；`LM_STUDIO_MIGRATION=PASS`；`OLLAMA_PACKAGED_SANITY=PASS`；`CUE_IDENTITY_ORDER=PASS_WITH_NO_CHANGED_SUGGESTIONS`；`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`；`PUBLIC_ASSET_DIGEST_STATUS=RECORDED_REMOTE_DIGESTS_NO_LOCAL_MATCH`；`NPM_RUN_CHECK=PASS（current remediation worktree；exact clean-source host fixture TEST_GAP）`；`DOCS_CHECK_FINAL=PASS`；`DIFF_CHECK=PASS`；`SOURCE_ACCEPTANCE=CONDITIONAL`；`DETERMINISTIC_AI_ACCEPTANCE=PASS`；`OLLAMA_LIVE_SANITY=PASS`；`PACKAGED_APP_ACCEPTANCE=CONDITIONAL`；`GOVERNANCE_CLOSEOUT=PASS`；`STABLE_RELEASE_RECOMMENDATION=NO`。
+- PRODUCTION_BEHAVIOR_CHANGED=NO（本輪未修改 production code；僅建立 acceptance-only package、證據與 current-state 文件同步）；版本建議：`KEEP_0.51.0`，不在本輪發布。
+- 遺留風險與後續事項：Windows Setup／Portable／Uninstall lifecycle、Windows 10／11 clean install、macOS Developer ID／公證／拖曳安裝、精確 source 在非 remediation host 的完整回歸、公開 asset per-asset build provenance、package 內舊 Release-note 狀態文字、真實 Breeze runtime、長音訊品質／效能與 Ollama 模型品質仍未解除；維持 stable release NO。若後續要解除條件，須取得 Windows 實機與可回溯 CI asset provenance，並另行決定是否更新 package／版本；不得修改本輪或前輪歷史 review 結論。
+
+## 2026-09-02 — Offline Subtitle Factory 0.51.0 Acceptance Remediation（ACCEPT-051-REMEDIATION-20260902）
+
+- 狀態：完成
+- 結案判定：Acceptance Remediation 完成；來源回歸、deterministic AI、治理與限定 Ollama live sanity 通過，packaged acceptance 依規則標示 BLOCKED，stable-release recommendation 維持 NO
+- 執行者：Codex 主要開發代理
+- 需求來源：需求方要求針對 0.51.0 既有驗收 FAIL 執行完整 Acceptance Remediation；不升版、不發布、不移動 tag、不修改 Release assets。
+- 關聯需求／缺陷：`ACCEPT-051-20260902`、`REL-041`、Breeze runtime manager regression、AI parser／repair TEST_GAP、Release current-state consistency
+- 變更等級：高（可能包含產品行為／測試／current-state 文件修正，並要求完整 regression 與獨立 review）
+- 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件（是）
+- 來源基準：`main@10b3044d31a5367a91faacea46b8def7ee103f7c`、package version `0.51.0`；保留既有工作樹變更、上一輪 acceptance report 與 evidence。
+- 目標與成功條件：釐清並修復 Breeze regression；補齊 parser／repair deterministic tests；將 LIVE-02／03／04 改由 deterministic fault-injection contract 驗證；只修正 current-state Release 文件中的 stale／contradictory text；完成指定 regression、Ollama live sanity、package 狀態核對、獨立 review 與 final gate。
+- 不在範圍：不建立新版本或 `v0.51.1`、不建立／刪除／移動 `v0.51.0` tag、不建立或修改 GitHub Release／assets、不下載 Ollama 模型、不改寫上一輪 acceptance report 或歷史 evidence、不降低 assertion。
+- 實際修改檔案／模組：`lib/breeze-runtime-probe.mjs`、`scripts/test-breeze-runtime-manager.mjs`、`lib/ai/subtitle-optimizer.mjs`、`scripts/test-ai-response-parser.mjs`、`scripts/test-ai-optimizer.mjs`、`scripts/test-ai-acceptance-contract.mjs`、`package.json`、`README.md`、`RELEASE-NOTES-0.51.0.md`、`docs/project-management/00-CURRENT-STATUS.md`、`05-DEVELOPMENT-AND-DEPLOYMENT.md`、`06-TEST-AND-PROCESS-AUDIT.md`、本條目、新 Release evidence 與獨立 review report。
+- 風險與回復方式：先以獨立 fixture／source 檢查判定 root cause；所有修改限於本輪明確範圍，保留既有使用者資料與歷史證據；若完整 regression 或治理 gate 仍失敗，停止發布並如實標示。
+- 驗證計畫：重現 Breeze failure、指定 parser／optimizer／provider／migration／Ollama／Breeze tests、`npm ci`、`npm run check`、`npm run docs:check`、`npm run docs:check:final`、Ollama live sanity、package／Release 唯讀核對、`git diff --check` 與獨立 review。
+- Root cause：主要為 B（測試 fixture 未傳入 Windows x64 的 `arch`，與 `getActiveManagedBreezePythonPath` 的 fail-closed contract 不一致），並有 C（`resolveBreezePython` 原先未提供／轉傳 `arch` 測試 seam）；未放寬正式 Windows arm64 fail-closed 行為。
+- Breeze remediation：`resolveBreezePython` 接受並轉傳 `arch`；manager regression fixtures 明確傳入 `platform:'win32', arch:'x64'`，並新增 Windows arm64 應回傳 `null` 的負向斷言。`node scripts/test-breeze-runtime-manager.mjs` 與 `node scripts/test-breeze-asr.mjs` 均 exit 0。
+- AI remediation：parser 新增 bounded traversal（最大深度 64）、循環參照防護與 context-aware candidate validation，後續有效候選可超越前一個 parseable 但不符合 cue context 的候選；加入 `testParserNoLanguageFenceAndCrLf`、`testParserIgnoresEmptyAndNonTextParts`、`testParserNestedJsonStringAndCandidatePriority`、`testParserBoundsCyclicCandidates`、`testRepairPreservesMultiCueIdentityAndOrder`。
+- Deterministic acceptance：新增 `scripts/test-ai-acceptance-contract.mjs` 並納入 `npm test`，CASE-R01 fenced JSON、CASE-R02 invalid→one-shot repair、CASE-R03 repair failure 均通過；R03 確認最多兩次 request 且不寫 completed checkpoint。LIVE-02／03／04 不以 live model 自發失敗作 gate。
+- 開發驗證：`npm ci` 成功（286 packages、0 vulnerabilities）；`npm run check` 在授權本機 port 且使用既有同架構 runtime 目錄 `OFFLINE_SUBTITLE_TEST_TOOLS_DIR=/Users/nycu/Documents/離線字幕工廠/offline-subtitle-factory-app/tools` 下 exit 0，包含 docs、syntax、Breeze、AI、provider、Ollama streaming、review UI 與 core integration；`npm run docs:check`、`git diff --check` 均 exit 0。
+- 本機工具限制：clone 的 `app/tools` 沒有 macOS FFmpeg／Whisper.cpp；未修改 clone 或舊 repo，僅唯讀使用既有 arm64 runtime 完成 core integration。未設定該 runtime 時，`test-core` 正確回報 FFmpeg `needs-action`，不把缺件環境誤列為通過。
+- Ollama live sanity：`http://127.0.0.1:11434/v1`、`llama3.2:1b`，未執行 `ollama pull`。限定 LIVE-01 PASS（3 cues／ID 順序）、LIVE-05 PASS（client abort）、LIVE-CHECKPOINT PASS（`nextBatchIndex=1`）；LIVE-02／03／04 改由 deterministic CASE-R01／R02／R03 驗證，不列為 live failure。
+- Packaged acceptance：BLOCKED。現有本機 0.51.0 macOS package provenance 為 `88da220`，目前來源為 `10b3044d31a5367a91faacea46b8def7ee103f7c`，沒有 digest-match package；未下載、未重建、未以不匹配 package 冒充驗收。
+- Release consistency：唯讀核對 `main`／`HEAD`／`v0.51.0` 與 GitHub Release target 均為 `10b3044d31a5367a91faacea46b8def7ee103f7c`；Release 為 public、非 draft、非 prerelease，既有 tag、Release、assets 均未修改。
+- PRODUCTION_BEHAVIOR_CHANGED=YES：`resolveBreezePython` 新增可選 `arch` 參數（既有呼叫預設行為不變），parser 亦改善 context-invalid candidate fallback；本輪未建立新版本或 tag。由於 source behavior 有修正且 0.51.0 public assets 未包含本輪變更，版本建議為 `RECOMMEND_0.51.1_PATCH`，僅作後續建議，不在本輪發布。
+- 獨立審查是否執行：是（round1）
+- 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-remediation-round1.md`
+- 判定（逐字引用審查報告完整結論句）：**本輪 Acceptance Remediation 獨立審查結論為有條件通過：來源回歸、deterministic AI 與限定 Ollama live sanity 已有證據，但 packaged acceptance 因本機 package provenance 88da220 與目前來源 10b3044d 不匹配而維持 BLOCKED，不能解除穩定發布阻擋。**
+- 條件是否已被需求方接受：是（本輪需求明確要求無 digest-match package 時標示 `PACKAGED_APP_ACCEPTANCE=BLOCKED`；此接受不等同 packaged acceptance 或 stable gate 通過）
+- 發布授權：不適用（本輪明確不發布、不移動 tag、不修改 Release assets）
+- Final gate：`SOURCE_ACCEPTANCE=PASS`；`DETERMINISTIC_AI_ACCEPTANCE=PASS`；`OLLAMA_LIVE_SANITY=PASS`；`PACKAGED_APP_ACCEPTANCE=BLOCKED`；`GOVERNANCE_CLOSEOUT=PASS`；`STABLE_RELEASE_RECOMMENDATION=NO`；`RECOMMEND_0.51.1_PATCH`。
+- 遺留風險與後續事項：需取得與 `10b3044d31a5367a91faacea46b8def7ee103f7c` 完全一致的 Setup／Portable／DMG／ZIP 後執行 packaged smoke、版本／內容／checksum 核對，並另行決定是否建立 0.51.1 patch；公開 0.51.0 的未簽章／未公證、乾淨環境、跨平台實機、長音訊與真實 Breeze runtime／checkpoint 風險仍維持原揭露。未取得同源封裝前不得解除 stable release 阻擋。
+
+## 2026-09-02 — Offline Subtitle Factory 0.51.0 本機驗收（ACCEPT-051-20260902）
+
+- 狀態：完成
+- 驗收結論：FAIL；stable-release recommendation：NO
+- 結案判定：指定版本與遠端 Release 基準一致；Ollama loopback 可用；但完整 `npm run check` 失敗、封裝檔未在本機取得，且 LIVE-02／03／04 無法由目前模型可靠重現，因此 Release gate 不通過
+- 執行者：Codex
+- 需求來源：需求方提供 0.51.0 本機驗收清單，指定 Repository `twyderek/offline-subtitle-factory-plan`、預期 `main@10b3044d31a5367a91faacea46b8def7ee103f7c`，要求只檢核與測試、不發布、不移動 tag、不替換 Release assets。
+- 關聯需求／缺陷：`REL-041`、`FR-021`、`FR-008`、`FR-010`、`NFR-006`、`NFR-008`
+- 變更等級：高（版本驗收、AI parser／repair、provider migration、Ollama live、封裝與公開 Release 唯讀核對；不修改產品行為）
+- 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件（是）
+- 來源基準：`main@10b3044d31a5367a91faacea46b8def7ee103f7c`；本機新建獨立 clone，驗收前工作樹 clean；既有 `offline-subtitle-factory-app` repo 不在本輪範圍。
+- 目標與成功條件：確認版本／環境／commit；逐項執行指定自動測試；核對 JSON repair assertions、LM Studio active contract 移除與 migration；只使用 loopback Ollama 並不下載模型；唯讀核對 packaged app／GitHub Release；依實際證據輸出 PASS／FAIL／BLOCKED 與剩餘風險。
+- 不在範圍：不修改程式或測試來讓測試通過；不建立／移動／刪除 tag；不修改 Release、Release assets 或 GitHub 狀態；不下載 Ollama 模型；不把 mock／deterministic 結果冒充 live acceptance。
+- 風險與回復方式：測試工具或本機服務缺失時標記 TEST_GAP／BLOCKED／MODEL_NOT_REPRODUCIBLE，不猜測成功；驗收產出的 evidence／cache 需與既有檔案分離，不覆寫使用者或歷史證據。
+- 驗證計畫：`npm ci`、`npm run check`、指定五項 AI／Ollama tests、source／parser 靜態 coverage、Ollama loopback preflight／live probe／正式 optimizer path、既有 packaged app smoke（若可取得）、GitHub Release API 唯讀核對、`git status --short`。
+- 環境與基準：`HEAD`／`main` 為 `10b3044d31a5367a91faacea46b8def7ee103f7c`，package version `0.51.0`；Node `v22.22.3`、npm `10.9.8`；`ollama` `0.33.2`，loopback `http://127.0.0.1:11434` 可用，已存在 `llama3.2:1b` 與 `llama3.2:3b`，本輪使用 `llama3.2:1b`，未執行 `ollama pull`。
+- 開發驗證結果：`npm ci` 成功（286 packages、0 vulnerabilities）；五項指定測試均 exit 0：`test-ai-response-parser.mjs`、`test-ai-optimizer.mjs`、`test-ai-provider-migration.mjs`、`test-ai-providers.mjs`、`test-ollama-batch-stream.mjs`。完整 `npm run check` exit 1，失敗於既有 `scripts/test-breeze-runtime-manager.mjs:125`：受管理 Breeze runtime 的 `getActiveManagedBreezePythonPath(...)` 實際為 `null`，預期為測試建立的 `python.exe` 路徑；本輪未修改程式或測試。
+- JSON repair coverage：現有 parser／optimizer assertions 覆蓋 root array／`cues` object、fenced JSON、text parts、明確 nested `cues`、任意 nested array rejection、Ollama 一次 repair、non-Ollama strict failure、failed checkpoint、schema preservation 與 telemetry。TEST_GAP：未明確測試無語言 fence、CRLF／外圍空白、JSON string／prose 中的 braces、empty／mixed／missing text parts、plain nested JSON string、candidate priority／cycle-depth bound，以及 multi-cue repair 的 ID／數量／順序正向斷言；建議測試名稱：`testParserNoLanguageFenceAndCrLf`、`testParserIgnoresEmptyAndNonTextParts`、`testParserNestedJsonStringAndCandidatePriority`、`testParserBoundsCyclicCandidates`、`testRepairPreservesMultiCueIdentityAndOrder`，預期分別為正確解析／忽略非文字、只接受明確 schema、有限遞迴且不 hang、repair 後 cue ID／數量／順序完全保留。
+- LM Studio removal：active registry／UI／provider contract 僅保留 `openai`、`openai-compatible`、`azure`、`groq`、`gemini`、`ollama`；殘留 `lm-studio` 僅為啟動／profile migration、移除負向測試與歷史／說明分類。`test-ai-provider-migration.mjs` 與 `test-ai-providers.mjs` 均通過，舊 LM Studio 設定遷移為未選 provider，其他 provider 設定與 secrets 保留。
+- Ollama live 結果：正式 `createProvider(...).optimize` → `optimizeSubtitleCues` path 使用 loopback Ollama，證據為 `docs/project-management/evidence/2026-09-02-acceptance-ollama-llama3.2-1b.json` 與 `/private/tmp/osf-acceptance-live-ollama-result.json`。LIVE-01 PASS（3 cues／ID 順序保留）；LIVE-05 PASS（client abort）；LIVE-CHECKPOINT PASS（第一批完成後寫入 `nextBatchIndex=1` 並停止）。LIVE-02（fenced JSON）、LIVE-03（missing cues 後 exactly 2 repair requests）、LIVE-04（repair failure）皆 `MODEL_NOT_REPRODUCIBLE`：模型未依指令產生 fence／missing cues／repair failure，不能冒充通過；未停止服務。
+- 封裝與 Release gate：本機沒有可供 smoke 的 0.51.0 Setup／Portable／DMG／ZIP，故 packaged app smoke 為 BLOCKED，未下載或建立新封裝。GitHub `v0.51.0` tag peeled commit、Release `target_commitish` 均為預期 commit；Release 為非 draft／非 prerelease，6 項 asset digest 已唯讀核對，Release notes 仍揭露 unsigned internal preview 與 live validation 未在原環境執行。由於 automated check failure、封裝 smoke BLOCKED 與 live repair scenarios 未通過，Release gate：FAIL；不建議穩定發布。
+- 獨立審查是否執行：是（round1）
+- round1 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-051-round1.md`
+- round2 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-051-round2.md`
+- round3 審查檔案：`docs/project-management/reviews/2026-09-02-acceptance-051-round3.md`
+- 判定（逐字引用 round3 審查報告完整結論句）：**本輪 round3 獨立複審確認 0.51.0 的 source identity、LM Studio migration／provider 安全契約、Ollama deterministic parser／repair contract 與部分 loopback live 結果仍有可回溯證據；但既有完整 npm run check failure 未解除、packaged app smoke 仍缺件、LIVE-02／03／04 仍為 MODEL_NOT_REPRODUCIBLE、parser／multi-cue 邊界與正式 optimizer live 證據仍有 TEST_GAP，且本機 tracked Release 文件與已記錄的遠端 Release 狀態互相矛盾，因此本機驗收、治理 closeout 與穩定發布候選均不通過。**
+- 獨立審查結論：不通過；round1、round2、round3 均指出完整回歸失敗、封裝 smoke BLOCKED、LIVE-02／03／04 MODEL_NOT_REPRODUCIBLE、parser／multi-cue TEST_GAP 與 Release 文件一致性風險。
+- 發布授權：不適用（本輪明確不發布、不移動 tag、不替換 Release assets）
+- 部署／發布結果：未部署、未發布；未建立或修改 GitHub tag／Release／assets。
+- 遺留風險與後續事項：先修正或另案釐清 Breeze runtime manager 測試失敗；補齊上述 TEST_GAP；取得可重現模型或 deterministic test harness 後重跑 LIVE-02／03／04；取得本機封裝後執行 Setup／Portable smoke；在所有 gate 收斂前維持 stable-release recommendation NO。驗收產生的工作紀錄與 Ollama probe evidence 目前為本機變更，未推送 GitHub。
+
 ## 2026-09-01 — Offline Subtitle Factory 0.51.0 LM Studio provider removal preparation（REL-041）
 
 - 狀態：完成

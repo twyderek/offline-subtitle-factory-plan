@@ -1,0 +1,100 @@
+{
+  "evidenceId": "ACCEPT-051-PACKAGED-ROUND3-20260902",
+  "recordedAt": "2026-09-02",
+  "repository": "twyderek/offline-subtitle-factory-plan",
+  "sourceCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+  "packageVersion": "0.51.0",
+  "exactSourceBaseline": {
+    "worktree": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d",
+    "command": "node scripts/test-breeze-runtime-manager.mjs",
+    "result": "FAIL",
+    "failure": "scripts/test-breeze-runtime-manager.mjs:125 expected a managed Windows x64 python.exe path but received null on a darwin-arm64 Node process because arch was omitted",
+    "interpretation": "The fail-closed Windows x64/arm64 contract was applied using the host process architecture; the fixture did not specify the simulated Windows architecture."
+  },
+  "breezeRemediation": {
+    "focusedCommands": [
+      "node scripts/test-breeze-runtime-manager.mjs",
+      "node scripts/test-breeze-asr.mjs",
+      "node --check lib/breeze-runtime-probe.mjs",
+      "node --check scripts/test-breeze-runtime-manager.mjs"
+    ],
+    "result": "PASS",
+    "fixtureContract": "Windows x64 fixtures pass arch=x64; Windows arm64 negative assertion remains null."
+  },
+  "cleanValidation": {
+    "installCommand": "npm ci",
+    "installResult": "PASS",
+    "regressionCommand": "OFFLINE_SUBTITLE_TEST_TOOLS_DIR=/Users/nycu/Documents/離線字幕工廠/offline-subtitle-factory-app/tools npm run check",
+    "regressionResult": "PASS",
+    "environment": "macOS arm64 host with existing read-only arm64 runtime tools; core integration used a temporary localhost port",
+    "docsCheckResult": "PASS",
+    "docsCheckFinalResult": "PASS_AFTER_ROUND6_REVIEW_INTEGRATION",
+    "diffCheckResult": "PASS"
+  },
+  "windowsActions": {
+    "workflow": "Build Windows 0.51.0",
+    "workflowFile": ".github/workflows/windows-preview.yml",
+    "runId": 33483093931,
+    "runUrl": "https://github.com/twyderek/offline-subtitle-factory-plan/actions/runs/33483093931",
+    "headSha": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "runner": "windows-2022",
+    "job": "Windows x64 test and package",
+    "jobId": 99776892605,
+    "jobConclusion": "success",
+    "sourceRegression": "PASS",
+    "packageMode": "unsigned internal preview",
+    "setupPortableBuild": "PASS",
+    "rendererLifecycle": "PASS",
+    "setupInstall": "PASS",
+    "uninstall": "PASS",
+    "portableSmoke": "PASS",
+    "archiveValidation": "PASS",
+    "artifact": {
+      "id": 9790782830,
+      "name": "offline-subtitle-factory-0.51.0-windows-x64",
+      "size": 487020484,
+      "sha256": "4a69b338d509846b200504118023768106e3502402b6d9d9ac4d440b15e62793",
+      "expired": false,
+      "expiresAt": "2026-09-15T07:41:31Z"
+    },
+    "localWindowsMachine": "NOT_AVAILABLE",
+    "classification": "CI_WINDOWS_LIFECYCLE_PASS_LOCAL_WINDOWS_PRISTINE_MACHINE_TEST_GAP"
+  },
+  "publicRelease": {
+    "tag": "v0.51.0",
+    "releaseUrl": "https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.51.0",
+    "targetCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "draft": false,
+    "prerelease": false,
+    "assetChecks": [
+      { "asset": "latest.yml", "size": 2155, "sha256": "afef8a7b5de7ff65cdfba2fa4204bd23dd5c3d04947fe1ab5f0ef1e086a61283", "downloadedAndVerified": true },
+      { "asset": "offline-subtitle-factory-portable-0.51.0.exe", "size": 242979811, "sha256": "cb6f7d6aa1127a0d254fbb1379a986c2c17277572b11c1e723c6c01d7db89c78", "downloadedAndVerified": true },
+      { "asset": "offline-subtitle-factory-setup-0.51.0.exe", "size": 243687067, "sha256": "5328c4f015a27290b5ef8ce90cf552f818aa4cc16f1635fd46c2632905616835", "downloadedAndVerified": true },
+      { "asset": "offline-subtitle-factory-setup-0.51.0.exe.blockmap", "size": 255227, "sha256": "c8dac8499da7969fb533ce7af9b08b777b10bb7970f7f14be6347009a3e21bc0", "downloadedAndVerified": true },
+      { "asset": "SHA256SUMS-windows-x64.txt", "size": 221, "sha256": "cbf9208e2e7e66ab29dca79e294c08fc23362f09a532ebf9c0462aaf53fe5f5b", "downloadedAndVerified": true },
+      { "asset": "SIGNING-STATUS-windows-x64.txt", "size": 91, "sha256": "a1dd9e1dc7ba28cfd8faed976343777e636a7642488e426ec628a5e949937347", "downloadedAndVerified": true }
+    ],
+    "sha256SumsCrossCheck": "PASS",
+    "latestYmlSetupSha512CrossCheck": "PASS",
+    "signingStatus": "UNSIGNED_INTERNAL_PREVIEW",
+    "perAssetBuildProvenance": "UNVERIFIED",
+    "provenanceReason": "The exact workflow uploaded an Actions artifact, but the workflow has no GitHub Release upload step and no public record links each Release asset to that artifact."
+  },
+  "documentation": {
+    "sourceReleaseNotes": "CURRENT_PUBLIC_RELEASE_STATE",
+    "publicLatestYmlEmbeddedReleaseNotes": "STALE_CANDIDATE_TEXT",
+    "exactSourcePackageEmbeddedReleaseNotes": "HISTORICAL_CANDIDATE_TEXT",
+    "recommendation": "RECOMMEND_0.51.1_PATCH"
+  },
+  "finalClassification": {
+    "sourceAcceptance": "CONDITIONAL_PUBLIC_TAG_BASELINE_FAIL_CURRENT_REMEDIATION_PASS",
+    "deterministicAiAcceptance": "PASS",
+    "ollamaLiveSanity": "PASS_FROM_ROUND2",
+    "macosPackagedAcceptance": "PASS_FROM_ROUND2",
+    "windowsPackagedAcceptance": "CONDITIONAL_CI_PASS_LOCAL_MACHINE_GAP",
+    "packagedAppAcceptance": "CONDITIONAL",
+    "publicReleaseProvenance": "UNVERIFIED",
+    "governanceCloseout": "PASS_AFTER_ROUND6_DOCUMENT_CLOSEOUT",
+    "stableReleaseRecommendation": "NO"
+  }
+}

@@ -1,11 +1,18 @@
 # 離線字幕工廠
 
-## 0.51.0 LM Studio 移除修正版準備中
+## 0.51.1 Patch release candidate（未公開）
 
-0.51.0 是未發布的 breaking candidate：移除 LM Studio provider 的 active 支援，並保留 Ollama 的本機 AI response repair。尚未建立 `v0.51.0` tag 或 GitHub Release；0.50.1 release preparation 已取消並由本版取代。
+目前工作樹正準備 0.51.1 patch baseline，分支為 `codex/release-0.51.1-preparation`。本候選修正 BUG-024 Breeze Windows arch fixture／resolver seam、同步 package／release notes metadata，並讓 Windows workflow 產生可追溯的 per-asset build provenance manifest；目前尚未建立 `v0.51.1` tag、GitHub Release 或公開下載資產。Windows CI、Windows local／pristine lifecycle、實際 0.51.1 macOS package 與公開資產 provenance 必須另行完成，不能由本機 source checks 代替。
+
+- 候選 release notes：[RELEASE-NOTES-0.51.1.md](RELEASE-NOTES-0.51.1.md)
+- 歷史公開版本：[v0.51.0](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.51.0)
+
+## 0.51.0 LM Studio 移除版（已公開；Packaged Acceptance remediation round6 已完成）
+
+0.51.0 是已公開的 breaking release：移除 LM Studio provider 的 active 支援，並保留 Ollama 的本機 AI response repair。GitHub `v0.51.0` Release 已建立；macOS arm64 acceptance-only package 已通過，exact source 對應的 Windows Actions run `33483093931` 也完成 unsigned Setup／Portable、renderer、安裝／解除安裝與 archive smoke。公開 Setup／Portable／metadata 資產已下載並核對 GitHub digest／大小／SHA256SUMS，但 workflow 沒有將該 Actions artifact 直接上傳至 Release，因此 per-asset build provenance 仍是 `UNVERIFIED`；本機／pristine Windows machine 亦未執行。exact public tag 的 clean-source Breeze fixture baseline 仍為 `FAIL`，current remediation worktree 修正已通過回歸；因此 packaged acceptance 與 remediation 治理 closeout 均維持 `CONDITIONAL`，stable-release recommendation 維持 `NO`，版本建議 `RECOMMEND_0.51.1_PATCH`。0.50.1 release preparation 已取消並由本版取代。
 
 - Release notes：[RELEASE-NOTES-0.51.0.md](RELEASE-NOTES-0.51.0.md)
-- 目前公開版本仍為：[v0.50.0](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.50.0)
+- 目前公開版本：[v0.51.0](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.51.0)
 - 舊 LM Studio 設定會安全移除並回到「未選擇 AI 供應商」，不會自動切換到 Ollama 或雲端 provider；其他 provider 與 secrets 保留。
 - Ollama 支援 Markdown-wrapped JSON、跨 text parts JSON、nested wrapper root-array 邊界與缺少 `cues` 時的一次性 repair。一般 OpenAI-compatible 端點仍可用，但不代表官方 LM Studio 支援。
 
@@ -135,23 +142,17 @@ Windows x64 使用者首次選擇 Breeze ASR 25 時，App 可從固定 GitHub Re
 
 ### macOS Apple Silicon
 
-開啟下列 DMG，將「離線字幕工廠」拖到「應用程式」：
-
-```text
-offline-subtitle-factory-0.49.0-macos-arm64.dmg
-```
-
-另提供 ZIP 版本，可解壓後把 APP 移入「應用程式」。目前成品使用 ad-hoc 本機簽章，未經 Apple 公證；若首次啟動被 Gatekeeper 阻擋，請在 Finder 對 APP 按右鍵並選擇「打開」。
+目前公開 `v0.51.0` Release 沒有 macOS 下載資產；本輪 macOS arm64 DMG／ZIP 僅作 acceptance-only evidence，未發布為公開下載檔。若要建置 macOS arm64，請依下方開發指令執行。產出的成品使用 ad-hoc 本機簽章，未經 Apple 公證；若首次啟動被 Gatekeeper 阻擋，請在 Finder 對 APP 按右鍵並選擇「打開」。
 
 ### Windows x64
 
-Windows 0.49.0 x64 版提供 NSIS Setup 與 Portable。可從 GitHub [`v0.49.0` Release](https://github.com/twyderek/offline-subtitle-factory-app/releases/tag/v0.49.0) 下載 `offline-subtitle-factory-setup-0.49.0.exe` 與 `offline-subtitle-factory-portable-0.49.0.exe`。
+Windows 0.51.0 x64 版提供 NSIS Setup 與 Portable，可從 GitHub [`v0.51.0` Release](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.51.0) 下載 `offline-subtitle-factory-setup-0.51.0.exe` 與 `offline-subtitle-factory-portable-0.51.0.exe`。下載後請先核對 Release 的 `SHA256SUMS-windows-x64.txt`。
 
 目前 Windows 正式資產尚未使用程式碼簽章憑證，Windows 11 SmartScreen 可能顯示「未知發行者」。請先核對 Release 所附 SHA-256，並優先在非關鍵環境完成安裝與操作確認，再由「其他資訊 → 仍要執行」啟動。
 
 ## 預設模式不需要自行安裝其他軟體
 
-0.49.0 安裝包已內建：
+0.51.0 安裝包已內建：
 
 - 完整離線操作手冊（目前內建手冊版本）：`resources/docs/0.45.2/USER-GUIDE.html`
 - 圖文畫面與三段常見問題操作動畫
@@ -207,13 +208,13 @@ Windows 0.49.0 x64 版提供 NSIS Setup 與 Portable。可從 GitHub [`v0.49.0` 
 
 ## 開發與測試
 
-目前 0.47.1 發布與治理收尾位於 `codex/release-v0.47.1`；GitHub 專案首頁以 `main` 為預設分支，本次同步完成後新 checkout 應以 `main` 為準。
+目前 0.51.0 公開 Release 與治理收尾以 `main`／`v0.51.0` 為基準；round3 已確認 Windows exact CI lifecycle，但本機／pristine Windows 與 public per-asset build provenance 仍是已揭露缺口。
 
 ### Windows 11 x64
 
 ```powershell
-git clone https://github.com/twyderek/offline-subtitle-factory-app.git
-cd offline-subtitle-factory-app
+git clone https://github.com/twyderek/offline-subtitle-factory-plan.git
+cd offline-subtitle-factory-plan/app
 git switch main
 npm ci
 Set-ExecutionPolicy -Scope Process Bypass

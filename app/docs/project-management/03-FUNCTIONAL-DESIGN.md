@@ -116,6 +116,10 @@ Whisper.cpp 轉錄會要求 `--output-json` 與 `--output-json-full`，由 `lib/
 
 來源與版本確認 → runtime 準備及 hash 驗證 → `npm run check` → 平台打包 → 封裝內容／簽章／SHA 驗證 → 獨立審查 → Release notes 與資產上傳 → 發布後 digest 與下載核對。
 
+### 0.51.1 package metadata／provenance contract
+
+0.51.1 候選的 active release notes 必須由 `package.json` 的 `build.releaseInfo.releaseNotesFile` 指向 `RELEASE-NOTES-0.51.1.md`，並由 build `files` 明確納入；歷史 `RELEASE-NOTES-0.51.0.md` 只作保留文件。Windows workflow 在產出 Setup／Portable 與 `latest.yml` 後，必須先檢查 package version、artifact naming 與 release-notes 不含 0.51.0 candidate stale text，再以同一組實際 asset 的 name／size／SHA-256 寫入 `BUILD-PROVENANCE-windows-x64.json`。準備輪只上傳 Actions artifact；沒有 Release upload 與公開 asset 反向核對時，provenance 狀態維持 `UNVERIFIED`。
+
 ## 錯誤處理原則
 
 - 使用者輸入錯誤回傳可採取行動的訊息，不洩漏 secrets 或內部 stack。

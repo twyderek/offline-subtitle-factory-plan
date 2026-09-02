@@ -53,6 +53,16 @@
 | NFR-007 | 可存取性 | 主要控制可鍵盤操作；狀態與展開控制具語意屬性 |
 | NFR-008 | 發布完整性 | 安裝包、簽章狀態、SHA、版本說明與下載資產一致 |
 
+## 0.51.1 patch preparation acceptance
+
+本節定義 0.51.1 候選的準備基線，不代表已發布或已解除 0.51.0 的歷史驗收條件。
+
+| ID | 候選基線 | 驗收重點 |
+|---|---|---|
+| PREP-0511-001 | BUG-024 Breeze platform／arch seam | Windows x64 managed-runtime positive fixture 必須明示 `arch: 'x64'`；Windows arm64 必須 fail closed；一般呼叫仍採 `process.arch` 預設，不得以測試修正放寬正式平台限制 |
+| PREP-0511-002 | 版本與 embedded release metadata | `package.json`、lockfile、UI marker、build files、`releaseInfo.releaseNotesFile` 與 0.51.1 release notes 必須一致；候選不得再攜帶 0.51.0 的「尚未建立 tag／Release」狀態文字 |
+| PREP-0511-003 | Windows artifact provenance | workflow 必須在打包後產生包含 source commit、run、runner、package version、asset name／size／SHA-256 的 provenance manifest，並與 Actions artifact 一起保存；沒有 Release upload 證據時不得宣稱 public provenance 已驗證 |
+
 ## 明確不在目前範圍
 
 - 多段非線性剪輯、轉場、濾鏡、多軌與素材拼接。

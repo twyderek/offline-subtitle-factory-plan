@@ -87,6 +87,27 @@
 
 發現新問題先在 `08-CHANGE-LOG.md` 記錄，再於本文件新增 `BUG-ID`。修正不得只寫「已解決」，必須包含可重現證據、根因與防回歸測試；若只能 workaround，須說明移除條件。
 
+### BUG-024 — Breeze managed runtime fixture 未明示模擬 Windows 架構
+
+- 日期／版本：2026-09-02／0.51.0 Packaged Acceptance Remediation round3。
+- 現象／影響：在 macOS arm64 host 的 exact `10b3044d31a5367a91faacea46b8def7ee103f7c` clean worktree 執行 `node scripts/test-breeze-runtime-manager.mjs`，fixture 預期 Windows managed `python.exe` 路徑但實際得到 `null`，使完整 `npm run check` 在測試第 125 行停止。
+- 重現：fixture 呼叫 `getActiveManagedBreezePythonPath({ runtimeDirectory, platform: 'win32' })` 未傳 `arch`；resolver 預設採 `process.arch`（本機為 `arm64`），而正式 contract 對 Windows x64 managed runtime 會 fail closed。
+- 根因判定：主要是測試 fixture 未完整描述模擬的 Windows x64 環境；`null` 是目前 resolver 防止 Windows arm64 誤用 x64 runtime 的預期結果，不是應放寬正式架構檢查的產品行為。
+- 修正：所有 Windows managed-runtime positive／download／install／probe fixture 明確傳入 `arch: 'x64'`；新增 `arch: 'arm64'` 必須回傳 `null` 的負向斷言；`resolveBreezePython` 的可選 `arch` seam 保留既有呼叫的 `process.arch` 預設行為並轉傳至 managed resolver。
+- 驗證：exact source 基準失敗已保存於 `docs/project-management/evidence/2026-09-02-acceptance-packaged-round3.json`；修正後 `node scripts/test-breeze-runtime-manager.mjs`、`node scripts/test-breeze-asr.mjs`、兩個 `node --check` 與受控 `npm run check` 均 exit 0。
+- 防回歸：平台／架構矩陣不得省略 `arch`；Windows x64 positive path 與 Windows arm64 fail-closed path 必須同時保留。若未來擴充架構，先新增明確 manifest／runtime fixture，不以 host architecture 隱式代替目標平台。
+- 剩餘風險：本機仍不是 Windows host，Windows 實際安裝權限、SmartScreen、程序生命週期與真實 Breeze managed runtime 仍依 exact Windows Actions／外部實機證據分別揭露。
+
+### BUG-025 — 0.51.0 stale package metadata 與 per-asset provenance chain 不完整
+
+- 日期／版本：2026-09-02／0.51.1 patch preparation。
+- 現象／影響：0.51.0 公開 `latest.yml` 與 exact package embedded release notes 仍含候選版「尚未建立 tag／Release」文字；既有 Windows workflow 只保存 Actions artifact，沒有把每個實際 Release asset 的 source／run／size／SHA-256 關係寫入可攜式 manifest，造成 updater metadata 與公開資產 provenance 無法完整回溯。
+- 根因判定：0.51.0 的 active build metadata 與歷史候選文件狀態未在發布前形成版本化一致性檢查；CI 的 checksum 雖可驗證內容完整性，但未產生 per-asset build provenance record，也沒有在 packaged workflow 阻擋 stale release-note／latest metadata。
+- 修正：0.51.1 active build 指向 `RELEASE-NOTES-0.51.1.md`，新增 deterministic release metadata contract test；Windows workflow 檢查 packaged notes／`latest.yml` 的 version、artifact naming 與 stale text，並產生 `BUILD-PROVENANCE-windows-x64.json` 後與 Actions artifact 一起保存。這些修正不改寫 v0.51.0 的 tag／Release／assets，也不在本輪建立公開 v0.51.1。
+- 驗證：候選 source／clean worktree 需通過 release metadata fixture、Breeze arch matrix、完整 `npm run check` 與文件 gates；Windows CI 與公開 asset provenance 在本準備輪未執行時仍標示 `NOT_RUN`／`UNVERIFIED`，待實際候選資產產生後再核對。
+- 防回歸：版本、notes path、workflow artifact naming 與 stale-text assertions 納入 `npm test`／Windows workflow；provenance manifest 必須使用實際 asset 的 name／size／SHA-256 與 `GITHUB_SHA`，不能硬編 round6 檔名或依賴開發者私人路徑。
+- 剩餘風險：本輪尚未有公開 v0.51.1 asset、Release upload provenance、Windows local／pristine 安裝生命週期或 0.51.1 macOS packaged evidence；未完成前 stable release recommendation 維持 `NO`。
+
 ### BUG-WHISPER-METAL-139 — macOS Metal buffer allocation crash
 
 - 日期／版本：2026-07-30／0.48.0

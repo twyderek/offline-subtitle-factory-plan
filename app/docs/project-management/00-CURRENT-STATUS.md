@@ -1,19 +1,27 @@
 # 目前專案狀態
 
-> 最後查證日期：2026-09-01
-> 現行版本：0.51.0（LM Studio removal breaking candidate）
-> 現行公開版本：0.50.0（GitHub Latest）
-> 發布 tag／commit：`v0.50.0` → `44c40225e2b0a39e759048439e3db912b6333ad9`；既有 `v0.49.1` 保留
+> 最後查證日期：2026-09-02
+> 現行版本：0.51.1（本機 patch release candidate；尚未公開）
+> 現行公開版本：0.51.0（GitHub public Release；remediation 文件／證據治理 closeout：有條件通過；stable-release recommendation：NO，packaged acceptance CONDITIONAL：macOS arm64 PASS、Windows exact CI lifecycle PASS；本機／pristine Windows 與 per-asset provenance 仍有缺口）
+> 發布 tag／commit：`v0.51.0` → `10b3044d31a5367a91faacea46b8def7ee103f7c`；既有 `v0.50.0` 保留
 > 主分支：`main`
 
-## 0.51.0 LM Studio removal preparation（REL-041）
+## 0.51.1 Patch release preparation（PREP-0511-20260902）
 
-- 0.50.1 release preparation 已取消／未發布，現由 0.51.0 candidate 取代；不建立 `v0.50.1` tag 或 Release，既有 `v0.50.0` tag、Release 與資產不修改。
+- 本機候選分支：`codex/release-0.51.1-preparation`；本輪只建立可驗收的 patch baseline，不推送、不建立 `v0.51.1` tag／GitHub Release／公開 assets，也不改寫 v0.51.0。
+- 候選版本已同步 `app/package.json`、`app/package-lock.json`、首頁版本標記、build files 與 `releaseInfo.releaseNotesFile`；active release notes 為 `RELEASE-NOTES-0.51.1.md`，0.51.0 文件仍作為歷史公開版本保留。
+- BUG-024 的 Breeze arch seam／fixture 已納入候選：Windows x64 positive path 與 Windows arm64 fail-closed path 同時驗證；既有 default `process.arch` 行為不放寬。
+- Windows 0.51.1 workflow 新增 packaged release-notes／latest metadata stale-text checks、`BUILD-PROVENANCE-windows-x64.json` per-asset manifest 與 Actions artifact upload；本輪不宣稱已取得 Windows CI artifact 或 GitHub Release provenance。
+- clean-source regression、文件 gates 與 static release metadata contract 必須在乾淨 worktree 通過；Windows CI、Windows local／pristine lifecycle、0.51.1 macOS package 與公開 per-asset provenance 仍是本輪外部 gate，未完成前不得稱為可公開發布。
+
+## 0.51.0 LM Studio removal public release／Acceptance Remediation（REL-041）
+
+- 0.50.1 release preparation 已取消／未發布；0.51.0 已於 2026-09-01 建立 annotated tag 並公開 GitHub Release，`v0.50.1` tag／Release 不建立，既有 `v0.50.0` tag、Release 與資產不修改。
 - `app/package.json` 與 `app/package-lock.json` 已同步為 `0.51.0`；Windows workflow、artifact、tag trigger 與 packaged release notes 已同步 0.51.0。
 - 已移除 LM Studio 的 active provider registry、adapter、capabilities、預設 endpoint、UI selector、local discovery 與 LM-only JSON Schema 特例。一般 OpenAI-compatible 仍是通用 transport，不代表官方 LM Studio 支援。
 - 舊設定／專案匯入／瀏覽器 localStorage 中的 LM Studio provider 會被清除並回到未選擇狀態，顯示一次 `LM Studio 已停止支援，相關設定已移除，請重新選擇 AI 供應商。`；不會自動改成 Ollama 或雲端 provider，其他 provider 與 secrets 保留且 migration 可重複執行。
 - Ollama 保留 shared JSON candidate extraction、Markdown-wrapped JSON、text parts 與 nested wrapper root-array 保護；缺少 `cues` 時最多 repair 一次，非本機 provider strict failure，repair 失敗不寫 completed checkpoint。
-- 0.51.0 release notes：`RELEASE-NOTES-0.51.0.md`。本候選尚未建立 tag／GitHub Release；Windows unsigned internal preview 必須持續以未簽章狀態揭露。
+- 0.51.0 release notes：`RELEASE-NOTES-0.51.0.md`。GitHub `v0.51.0` Release 已公開且為非 draft／非 prerelease；Windows unsigned internal preview 仍必須持續以未簽章狀態揭露。本輪沿用 macOS arm64 acceptance-only package 證據，並由 exact `10b3044d…` 的 GitHub Actions run `33483093931`（Windows Server 2022）完成 source regression、unsigned Setup／Portable build、Setup install／renderer、uninstall、Portable renderer 與 archive checks；因此 `WINDOWS_CI_LIFECYCLE=PASS`，但本機／pristine Windows machine 仍為 `TEST_GAP`。exact public tag 的 clean-source Breeze fixture baseline 仍為 `FAIL`，current remediation worktree 修正已通過回歸。公開六項 asset 已下載並核對 GitHub digest／大小／公開 SHA256SUMS，然而 workflow 僅上傳 Actions artifact，沒有 Release upload step，故 `PUBLIC_ASSET_PROVENANCE=UNVERIFIED`。公開 `latest.yml` 仍嵌入候選版 release-notes 文字，exact 0.51.0 package 亦保留該歷史 embedded text；source current release notes 已修正，package／public metadata stale condition 仍需 patch release 處理。round6 獨立複審後，remediation 文件／證據治理 closeout 為有條件通過；packaged acceptance 為 `CONDITIONAL`，stable-release recommendation 維持 `NO`，版本建議 `RECOMMEND_0.51.1_PATCH`。完整證據：`docs/project-management/evidence/2026-09-02-acceptance-packaged-0510-macos-arm64.json`、`docs/project-management/evidence/2026-09-02-acceptance-packaged-round3.json`、`docs/project-management/reviews/2026-09-02-acceptance-packaged-round6.md`。
 
 ## 0.50.1 AI response repair patch release preparation（REL-040，已取消／由 0.51.0 取代）
 
@@ -21,7 +29,7 @@
 - `app/package.json` 與 `app/package-lock.json` 曾同步為 `0.50.1`；該候選未發布，現行產品版本改由 0.51.0 取代。
 - 歷史 patch release notes 曾為 `RELEASE-NOTES-0.50.1.md`，該候選已取消；目前建置設定與 Windows preview workflow 已改指向 0.51.0。歷史 `RELEASE-NOTES-0.50.0.md`、changelog、review evidence 與既有資產不改寫。
 - PR #1 已將 AI response parser 修正 squash merge 至 main；其 response parser 修正由 0.51.0 保留，LM Studio provider 與 LM-only JSON Schema 行為則已移除。
-- `v0.50.1` tag、GitHub Release 與正式安裝資產尚未建立；公開版本仍為 `v0.50.0`，既有 tag／Release 保留不覆蓋。
+- `v0.50.1` tag、GitHub Release 與正式安裝資產均未建立；該歷史候選後續由已公開的 `v0.51.0` 取代，既有 tag／Release 保留不覆蓋。
 - 歷史 0.50.1 preview workflow 已移至 repository root `.github/workflows/windows-preview.yml` 並成功產生未簽章 internal preview；目前 workflow artifact／tag／檔名已改指向 0.51.0。signed build 因無憑證按設計 skipped，未將 unsigned artifact 描述為正式簽章版本。
 - source focused／完整回歸、文件檢查、runtime manifest／verify、Windows unpacked／unsigned Setup／Portable build、封裝內容／archive／checksum 與 Setup／Portable／uninstall renderer smoke 已通過；round1／round2／round3 獨立審查報告已建立，`docs:check:final` 已通過，release PR 可供需求方審查。
 - 歷史 0.50.1 rerun 曾修正 Windows CRLF 下治理 parser 的行尾相容性並通過候選 archive／package／model exclusion／checksum／renderer smoke；該候選不再是目前發布目標。

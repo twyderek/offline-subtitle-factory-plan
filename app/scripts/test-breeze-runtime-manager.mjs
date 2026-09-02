@@ -122,15 +122,16 @@ try {
   await fs.promises.mkdir(path.dirname(managedPython), { recursive: true });
   await fs.promises.writeFile(managedPython, 'managed');
   await fs.promises.writeFile(path.join(runtimeDirectory, 'runtime-state.json'), JSON.stringify({ activeVersion: '2026.08.1' }));
-  assert.equal(getActiveManagedBreezePythonPath({ runtimeDirectory, platform: 'win32' }), managedPython);
+  assert.equal(getActiveManagedBreezePythonPath({ runtimeDirectory, platform: 'win32', arch: 'x64' }), managedPython);
+  assert.equal(getActiveManagedBreezePythonPath({ runtimeDirectory, platform: 'win32', arch: 'arm64' }), null, 'Windows arm64 不得誤用 x64 managed runtime');
   const legacyHome = path.join(tempDir, 'legacy-home');
   const legacyPython = path.join(legacyHome, 'Breeze-ASR-25', '.venv', 'Scripts', 'python.exe');
   await fs.promises.mkdir(path.dirname(legacyPython), { recursive: true });
   await fs.promises.writeFile(legacyPython, 'legacy');
-  assert.equal(resolveBreezePython({ platform: 'win32', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome }, managedRuntimeDirectory: runtimeDirectory }), managedPython);
-  assert.equal(resolveBreezePython({ platform: 'win32', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome, BREEZE_ASR_PYTHON: 'developer-python.exe' }, managedRuntimeDirectory: runtimeDirectory }), 'developer-python.exe');
+  assert.equal(resolveBreezePython({ platform: 'win32', arch: 'x64', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome }, managedRuntimeDirectory: runtimeDirectory }), managedPython);
+  assert.equal(resolveBreezePython({ platform: 'win32', arch: 'x64', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome, BREEZE_ASR_PYTHON: 'developer-python.exe' }, managedRuntimeDirectory: runtimeDirectory }), 'developer-python.exe');
   await fs.promises.rm(path.join(runtimeDirectory, 'runtime-state.json'));
-  assert.equal(resolveBreezePython({ platform: 'win32', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome }, managedRuntimeDirectory: runtimeDirectory }), legacyPython);
+  assert.equal(resolveBreezePython({ platform: 'win32', arch: 'x64', env: { LOCALAPPDATA: tempDir, USERPROFILE: legacyHome }, managedRuntimeDirectory: runtimeDirectory }), legacyPython);
 
   const goodZip = makeZip([{ name: 'python.exe', content: 'fake python executable' }, { name: 'Lib/', content: '' }, { name: 'Lib/whisper.py', content: 'fixture' }]);
   const goodManifest = testManifest({ archive: goodZip });
@@ -157,9 +158,9 @@ try {
   await fs.promises.writeFile(archivePath, goodZip);
 
   const probe = async ({ pythonPath }) => ({ ok: path.basename(pythonPath) === 'python.exe', module: 'whisper', availableModels: ['breeze-asr-25'] });
-  const installed = await installBreezeRuntime({ archivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', extractArchive: extractZipArchive, probe });
+  const installed = await installBreezeRuntime({ archivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', arch: 'x64', extractArchive: extractZipArchive, probe });
   assert.equal(installed.status, BREEZE_RUNTIME_STATUS.INSTALLED);
-  assert.equal((await inspectInstalledBreezeRuntime({ runtimeDirectory, manifest: goodManifest, platform: 'win32', probe })).ready, true);
+  assert.equal((await inspectInstalledBreezeRuntime({ runtimeDirectory, manifest: goodManifest, platform: 'win32', arch: 'x64', probe })).ready, true);
   assert.equal(await resolveManagedBreezePython({ runtimeDirectory, manifest: goodManifest, probe }), path.join(runtimeDirectory, goodManifest.runtimeVersion, 'python.exe'));
   const state = JSON.parse(await fs.promises.readFile(path.join(runtimeDirectory, 'runtime-state.json'), 'utf8'));
   assert.equal(state.activeVersion, goodManifest.runtimeVersion);
@@ -168,19 +169,19 @@ try {
   const badManifest = testManifest({ version: '2026.09.1', archive: badZip });
   const badArchivePath = path.join(tempDir, badManifest.download.filename);
   await fs.promises.writeFile(badArchivePath, badZip);
-  await assert.rejects(() => installBreezeRuntime({ archivePath: badArchivePath, manifest: badManifest, runtimeDirectory, platform: 'win32', extractArchive: extractZipArchive, probe: async () => ({ ok: false, stderr: 'hidden diagnostic' }) }), (error) => error.code === 'RUNTIME_PROBE_FAILED');
+  await assert.rejects(() => installBreezeRuntime({ archivePath: badArchivePath, manifest: badManifest, runtimeDirectory, platform: 'win32', arch: 'x64', extractArchive: extractZipArchive, probe: async () => ({ ok: false, stderr: 'hidden diagnostic' }) }), (error) => error.code === 'RUNTIME_PROBE_FAILED');
   assert.equal(JSON.parse(await fs.promises.readFile(path.join(runtimeDirectory, 'runtime-state.json'), 'utf8')).activeVersion, goodManifest.runtimeVersion, 'probe 失敗不得替換既有 active runtime');
   assert.equal(fs.existsSync(badArchivePath), false, 'probe 失敗必須清除本輪 archive');
 
   const malformedStatePath = path.join(runtimeDirectory, 'runtime-state.json');
   const atomicFailureArchivePath = path.join(tempDir, 'atomic-failure.zip');
   await fs.promises.writeFile(atomicFailureArchivePath, goodZip);
-  await assert.rejects(() => installBreezeRuntime({ archivePath: atomicFailureArchivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', extractArchive: extractZipArchive, probe, writeState: async () => { throw new Error('injected state write failure'); } }), /injected state write failure/);
+  await assert.rejects(() => installBreezeRuntime({ archivePath: atomicFailureArchivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', arch: 'x64', extractArchive: extractZipArchive, probe, writeState: async () => { throw new Error('injected state write failure'); } }), /injected state write failure/);
   assert.equal(JSON.parse(await fs.promises.readFile(malformedStatePath, 'utf8')).activeVersion, goodManifest.runtimeVersion, 'state write 失敗不得遺失既有 active state');
   assert.equal(await fs.promises.readFile(path.join(runtimeDirectory, goodManifest.runtimeVersion, 'python.exe'), 'utf8'), 'fake python executable', 'state write 失敗不得遺失既有 runtime');
   const activationAbortController = new AbortController();
   await fs.promises.writeFile(atomicFailureArchivePath, goodZip);
-  await assert.rejects(() => installBreezeRuntime({ archivePath: atomicFailureArchivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', extractArchive: extractZipArchive, probe, signal: activationAbortController.signal, writeState: async (filePath, data) => { await fs.promises.writeFile(filePath, JSON.stringify(data)); activationAbortController.abort(); } }), (error) => error.code === 'RUNTIME_CANCELLED');
+  await assert.rejects(() => installBreezeRuntime({ archivePath: atomicFailureArchivePath, manifest: goodManifest, runtimeDirectory, platform: 'win32', arch: 'x64', extractArchive: extractZipArchive, probe, signal: activationAbortController.signal, writeState: async (filePath, data) => { await fs.promises.writeFile(filePath, JSON.stringify(data)); activationAbortController.abort(); } }), (error) => error.code === 'RUNTIME_CANCELLED');
   assert.equal(JSON.parse(await fs.promises.readFile(malformedStatePath, 'utf8')).activeVersion, goodManifest.runtimeVersion, 'activation commit 中取消不得遺失既有 active state');
   assert.equal(await fs.promises.readFile(path.join(runtimeDirectory, goodManifest.runtimeVersion, 'python.exe'), 'utf8'), 'fake python executable', 'activation commit 中取消不得替換既有 runtime');
 
@@ -244,26 +245,26 @@ try {
   const corruptManifest = testManifest({ version: '2026.12.1', archive: corruptZip });
   const corruptArchivePath = path.join(tempDir, corruptManifest.download.filename);
   await fs.promises.writeFile(corruptArchivePath, corruptZip);
-  await assert.rejects(() => installBreezeRuntime({ archivePath: corruptArchivePath, manifest: corruptManifest, runtimeDirectory, platform: 'win32', extractArchive: extractZipArchive, probe }), (error) => error.code === 'ZIP_CORRUPT');
+  await assert.rejects(() => installBreezeRuntime({ archivePath: corruptArchivePath, manifest: corruptManifest, runtimeDirectory, platform: 'win32', arch: 'x64', extractArchive: extractZipArchive, probe }), (error) => error.code === 'ZIP_CORRUPT');
   assert.equal(fs.existsSync(corruptArchivePath), false, 'corrupt ZIP 必須清除 managed archive');
 
   const downloadDir = path.join(tempDir, 'download');
   const downloadManifest = testManifest({ archive: goodZip });
   const progress = [];
-  const successfulDownload = await downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: downloadDir, fetchImpl: async () => responseFromBuffer(goodZip, { headers: { 'content-length': String(goodZip.length) } }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, onProgress: (event) => progress.push(event) });
+  const successfulDownload = await downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: downloadDir, platform: 'win32', arch: 'x64', fetchImpl: async () => responseFromBuffer(goodZip, { headers: { 'content-length': String(goodZip.length) } }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, onProgress: (event) => progress.push(event) });
   assert.equal(fs.existsSync(successfulDownload.archivePath), true);
   assert.equal(progress.at(-1).progress, 100);
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'disk-full'), getFreeBytes: async () => 0, fetchImpl: async () => responseFromBuffer(goodZip) }), (error) => error.code === 'RUNTIME_DISK_SPACE');
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: { ...downloadManifest, download: { ...downloadManifest.download, url: 'http://example.test/runtime.zip' } }, runtimeDirectory: path.join(tempDir, 'insecure'), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => responseFromBuffer(goodZip) }), (error) => error.code === 'RUNTIME_INSECURE_URL');
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'redirect'), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => ({ ok: false, status: 302, headers: { get: () => 'http://unsafe.test/runtime.zip' } }) }), (error) => error.code === 'RUNTIME_INSECURE_URL');
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'timeout'), timeoutMs: 10, getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, body: (async function* body() { yield goodZip.subarray(0, 5); await new Promise((resolve) => setTimeout(resolve, 50)); yield goodZip.subarray(5); }()) }) }), (error) => error.code === 'RUNTIME_TIMEOUT');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'disk-full'), platform: 'win32', arch: 'x64', getFreeBytes: async () => 0, fetchImpl: async () => responseFromBuffer(goodZip) }), (error) => error.code === 'RUNTIME_DISK_SPACE');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: { ...downloadManifest, download: { ...downloadManifest.download, url: 'http://example.test/runtime.zip' } }, runtimeDirectory: path.join(tempDir, 'insecure'), platform: 'win32', arch: 'x64', getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => responseFromBuffer(goodZip) }), (error) => error.code === 'RUNTIME_INSECURE_URL');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'redirect'), platform: 'win32', arch: 'x64', getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => ({ ok: false, status: 302, headers: { get: () => 'http://unsafe.test/runtime.zip' } }) }), (error) => error.code === 'RUNTIME_INSECURE_URL');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'timeout'), platform: 'win32', arch: 'x64', timeoutMs: 10, getFreeBytes: async () => Number.MAX_SAFE_INTEGER, fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, body: (async function* body() { yield goodZip.subarray(0, 5); await new Promise((resolve) => setTimeout(resolve, 50)); yield goodZip.subarray(5); }()) }) }), (error) => error.code === 'RUNTIME_TIMEOUT');
   const cancelController = new AbortController();
   const cancelDir = path.join(tempDir, 'cancel');
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: cancelDir, signal: cancelController.signal, fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, body: (async function* body() { yield goodZip.subarray(0, 5); await new Promise((resolve) => setTimeout(resolve, 20)); yield goodZip.subarray(5); }()) }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, onProgress: ({ bytesDownloaded }) => { if (bytesDownloaded > 0) cancelController.abort(); } }), (error) => error.code === 'RUNTIME_CANCELLED');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: cancelDir, platform: 'win32', arch: 'x64', signal: cancelController.signal, fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, body: (async function* body() { yield goodZip.subarray(0, 5); await new Promise((resolve) => setTimeout(resolve, 20)); yield goodZip.subarray(5); }()) }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER, onProgress: ({ bytesDownloaded }) => { if (bytesDownloaded > 0) cancelController.abort(); } }), (error) => error.code === 'RUNTIME_CANCELLED');
   assert.equal((await fs.promises.readdir(cancelDir).catch(() => [])).some((name) => name.endsWith('.part')), false);
-  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'http-fail'), fetchImpl: async () => responseFromBuffer(Buffer.alloc(0), { status: 503 }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER }), (error) => error.code === 'RUNTIME_HTTP_ERROR');
+  await assert.rejects(() => downloadBreezeRuntime({ manifest: downloadManifest, runtimeDirectory: path.join(tempDir, 'http-fail'), platform: 'win32', arch: 'x64', fetchImpl: async () => responseFromBuffer(Buffer.alloc(0), { status: 503 }), getFreeBytes: async () => Number.MAX_SAFE_INTEGER }), (error) => error.code === 'RUNTIME_HTTP_ERROR');
 
-  const probeFailure = await inspectInstalledBreezeRuntime({ runtimeDirectory, manifest: goodManifest, platform: 'win32', probe: async () => ({ ok: false, timedOut: true }) });
+  const probeFailure = await inspectInstalledBreezeRuntime({ runtimeDirectory, manifest: goodManifest, platform: 'win32', arch: 'x64', probe: async () => ({ ok: false, timedOut: true }) });
   assert.equal(probeFailure.status, BREEZE_RUNTIME_STATUS.INVALID);
   console.log('Breeze managed runtime manager、下載／驗證／安全解壓／原子安裝測試通過');
 } finally {

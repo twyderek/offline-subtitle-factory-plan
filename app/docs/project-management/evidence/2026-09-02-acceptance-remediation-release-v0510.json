@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-09-02",
+  "repository": "twyderek/offline-subtitle-factory-plan",
+  "local": {
+    "head": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "main": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "tagCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c"
+  },
+  "remoteTag": {
+    "tagObject": "746b6d01669a2555fa6a237890f86193a40eb7dc",
+    "peeledCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c"
+  },
+  "release": {
+    "tag": "v0.51.0",
+    "name": "Offline Subtitle Factory 0.51.0",
+    "targetCommitish": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "draft": false,
+    "prerelease": false,
+    "publishedAt": "2026-09-01T07:55:23Z",
+    "assets": [
+      { "name": "latest.yml", "size": 2155, "digest": "sha256:afef8a7b5de7ff65cdfba2fa4204bd23dd5c3d04947fe1ab5f0ef1e086a61283" },
+      { "name": "offline-subtitle-factory-portable-0.51.0.exe", "size": 242979811, "digest": "sha256:cb6f7d6aa1127a0d254fbb1379a986c2c17277572b11c1e723c6c01d7db89c78" },
+      { "name": "offline-subtitle-factory-setup-0.51.0.exe", "size": 243687067, "digest": "sha256:5328c4f015a27290b5ef8ce90cf552f818aa4cc16f1635fd46c2632905616835" },
+      { "name": "offline-subtitle-factory-setup-0.51.0.exe.blockmap", "size": 255227, "digest": "sha256:c8dac8499da7969fb533ce7af9b08b777b10bb7970f7f14be6347009a3e21bc0" },
+      { "name": "SHA256SUMS-windows-x64.txt", "size": 221, "digest": "sha256:cbf9208e2e7e66ab29dca79e294c08fc23362f09a532ebf9c0462aaf53fe5f5b" },
+      { "name": "SIGNING-STATUS-windows-x64.txt", "size": 91, "digest": "sha256:a1dd9e1dc7ba28cfd8faed976343777e636a7642488e426ec628a5e949937347" }
+    ]
+  }
+}

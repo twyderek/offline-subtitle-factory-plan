@@ -271,6 +271,37 @@ const languageFallback = await optimizeSubtitleCues({ cues: [{ id: 'E3_01', text
 assert.equal(languageFallback.suggestions.length, 0, '中文術語模式應拒絕轉成英文的異常建議');
 await assert.rejects(() => optimizeSubtitleCues({ cues: source, config: { model: 'test', batchSize: 2 }, language: 'bad value', complete }), /BCP 47/);
 
+async function testRepairPreservesMultiCueIdentityAndOrder() {
+  const repairSource = [
+    { id: 'REPAIR-A', start: '00:00:00,000', end: '00:00:01,000', text: '第一段原始字幕' },
+    { id: 'REPAIR-B', start: '00:00:01,000', end: '00:00:02,000', text: '第二段原始字幕' },
+    { id: 'REPAIR-C', start: '00:00:02,000', end: '00:00:03,000', text: '第三段原始字幕' },
+  ];
+  const repairProgress = [];
+  let calls = 0;
+  const complete = async () => {
+    calls += 1;
+    const content = calls === 1
+      ? JSON.stringify({ answer: '第一次回應故意缺少 cues' })
+      : JSON.stringify({ cues: repairSource.map((cue) => ({ id: cue.id, text: `${cue.text}修正`, reason: 'multi-cue repair' })) });
+    return { choices: [{ message: { content } }] };
+  };
+  complete.progress = (value) => repairProgress.push(value);
+  const result = await optimizeSubtitleCues({
+    cues: repairSource,
+    config: { provider: 'ollama', model: 'test-model', batchSize: 3 },
+    complete,
+  });
+  assert.equal(calls, 2, 'multi-cue invalid response 應只進行一次 repair');
+  assert.equal(result.totalCues, repairSource.length);
+  assert.equal(result.suggestions.length, repairSource.length);
+  assert.deepEqual(result.suggestions.map((cue) => cue.id), repairSource.map((cue) => cue.id), 'repair 後 cue ID 與順序必須完全保留');
+  assert.deepEqual(result.suggestions.map((cue) => cue.original), repairSource.map((cue) => cue.text), 'repair 後來源文字對應不得錯位');
+  assert.equal(repairProgress.some((item) => item.validationRepair === true), true, 'multi-cue repair 應記錄 validation telemetry');
+}
+
+await testRepairPreservesMultiCueIdentityAndOrder();
+
 const invalid = async () => ({ choices: [{ message: { content: JSON.stringify({ cues: [{ id: 1, text: '缺一段' }] }) } }] });
 await assert.rejects(() => optimizeSubtitleCues({ cues: source, config: { model: 'test', batchSize: 2 }, complete: invalid }), /段落數量不符/);
 const reordered = async () => ({ choices: [{ message: { content: JSON.stringify({ cues: [

@@ -20,7 +20,7 @@ function summarizeProbeText(value) {
   return text.trim() ? 'runtime probe returned diagnostic output (omitted for privacy)' : '';
 }
 
-export function resolveBreezePython({ env = process.env, toolsDir = '', platform = process.platform, managedRuntimeDirectory = '' } = {}) {
+export function resolveBreezePython({ env = process.env, toolsDir = '', platform = process.platform, arch = process.arch, managedRuntimeDirectory = '' } = {}) {
   const explicit = String(env.BREEZE_ASR_PYTHON || '').trim();
   const homeDir = String(platform === 'win32'
     ? (env.USERPROFILE || env.HOME || os.homedir())
@@ -40,6 +40,7 @@ export function resolveBreezePython({ env = process.env, toolsDir = '', platform
   const managedRuntimePython = getActiveManagedBreezePythonPath({
     runtimeDirectory: managedRuntimeDirectory || getBreezeRuntimeDirectory({ env, platform }),
     platform,
+    arch,
     manifest: { entrypoint: 'python.exe' },
   });
   const bundledPython = platform === 'win32' ? 'python.exe' : 'python';

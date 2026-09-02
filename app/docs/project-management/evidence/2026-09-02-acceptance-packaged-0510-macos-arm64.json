@@ -1,0 +1,115 @@
+{
+  "capturedAt": "2026-09-02T03:45:57Z",
+  "source": {
+    "repository": "twyderek/offline-subtitle-factory-plan",
+    "commit": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "version": "0.51.0",
+    "buildWorktree": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d",
+    "trackedStatusAtBuildStart": "clean",
+    "postBuildNote": "Generated dist/ is untracked outside app; no source files were changed in the acceptance worktree.",
+    "host": {
+      "node": "v22.22.3",
+      "npm": "10.9.8",
+      "platform": "darwin",
+      "arch": "arm64",
+      "kernel": "Darwin 25.6.0 arm64"
+    }
+  },
+  "build": {
+    "command": "npm run electron:build:mac -- --config.directories.output=../dist/acceptance-0.51.0-10b3044d --publish never",
+    "electron": "43.3.0",
+    "electronBuilder": "26.15.7",
+    "outputRoot": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d/dist/acceptance-0.51.0-10b3044d",
+    "provenance": "VERIFIED_FROM_CLEAN_SOURCE_COMMIT_AND_FORMAL_MAC_WORKFLOW"
+  },
+  "assets": [
+    {
+      "name": "offline-subtitle-factory-0.51.0-macos-arm64.zip",
+      "path": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d/dist/acceptance-0.51.0-10b3044d/offline-subtitle-factory-0.51.0-macos-arm64.zip",
+      "size": 248256991,
+      "sha256": "7fad3032348d69315e124a855350abdecb96f7cd1e16af0530dc35559bd84a63",
+      "integrity": "unzip -t PASS"
+    },
+    {
+      "name": "offline-subtitle-factory-0.51.0-macos-arm64.dmg",
+      "path": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d/dist/acceptance-0.51.0-10b3044d/offline-subtitle-factory-0.51.0-macos-arm64.dmg",
+      "size": 241395503,
+      "sha256": "afc542a407d56c7a1bd65b52927094c93014169ae70c74028d210d9b578feca8",
+      "integrity": "hdiutil verify VALID"
+    },
+    {
+      "name": "offline-subtitle-factory-0.51.0-macos-arm64.dmg.blockmap",
+      "path": "/Users/nycu/Documents/離線字幕工廠/.acceptance-worktrees/osf-051-10b3044d/dist/acceptance-0.51.0-10b3044d/offline-subtitle-factory-0.51.0-macos-arm64.dmg.blockmap",
+      "size": 252953,
+      "sha256": "73a5e39379fd6e3ec0b79ca20107d18afe94ecf7f36d79f82d14fcaa15903918"
+    }
+  ],
+  "packageContents": {
+    "embeddedPackageVersion": "0.51.0",
+    "embeddedMain": "electron/main.mjs",
+    "executable": "Mach-O 64-bit executable arm64",
+    "runtimeTarget": "darwin-arm64",
+    "runtimeManifest": {
+      "ffmpeg": "8.1.2",
+      "whisperCpp": "1.9.1",
+      "model": "ggml-tiny.bin",
+      "modelSha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+    },
+    "activeProviderIds": ["openai", "openai-compatible", "azure", "groq", "gemini", "ollama"],
+    "activeLmStudio": false,
+    "unexpectedLargeRuntimeOrModel": false,
+    "codeSignature": "codesign --verify --deep --strict PASS; ad-hoc, not notarized"
+  },
+  "smoke": {
+    "renderer": "PASS: packaged executable UI/API smoke, manual SRT job, Breeze selection/cancel, AI review, provider registry, folder flow",
+    "trim": "PASS: packaged executable with package FFmpeg, 4-second MP4, precise 1-3 second trim, post-trim job/review synchronization",
+    "setupWindows": "TEST_GAP: Windows package and Windows host unavailable on current macOS host",
+    "portableWindows": "TEST_GAP: Windows package and Windows host unavailable on current macOS host",
+    "uninstall": "TEST_GAP: no Windows installer lifecycle and no macOS installer lifecycle harness in this environment"
+  },
+  "migration": {
+    "activeRemoval": "PASS: packaged provider response contains six active IDs and no lm-studio active entry",
+    "legacyMigration": "PASS: isolated legacy LM Studio settings returned to provider='', enabled=false; lm-studio profile removed",
+    "secretPreservation": "PASS: openai and ollama migrated secrets remained available through packaged safeStorage IPC",
+    "idempotency": "PASS: second isolated-profile launch produced the same normalized state; legacy file remained absent"
+  },
+  "ollamaPackaged": {
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "model": "llama3.2:1b",
+    "modelPull": "NOT_RUN",
+    "settingsStatus": 200,
+    "providerTestStatus": 200,
+    "modelAvailable": true,
+    "jobCreateStatus": 201,
+    "optimizeStartStatus": 202,
+    "finalStatus": "completed",
+    "totalCues": 3,
+    "suggestionCount": 0,
+    "sessionSourceIds": [1, 2, 3],
+    "sessionSuggestionIds": [],
+    "cueIdentityOrder": "PASS_WITH_NO_CHANGED_SUGGESTIONS",
+    "path": "packaged Electron UI -> packaged server -> packaged optimizer -> Ollama loopback -> persisted session result"
+  },
+  "publicRelease": {
+    "tag": "v0.51.0",
+    "tagObject": "746b6d01669a2555fa6a237890f86193a40eb7dc",
+    "peeledCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "release": "public, non-draft, non-prerelease",
+    "assetProvenance": "UNVERIFIED: release target matches source commit, but no per-asset CI build provenance was available",
+    "assetDigestStatus": "RECORDED_REMOTE_DIGESTS_NO_LOCAL_MATCH: six remote asset digests recorded; no same-name local Windows asset to compare"
+  },
+  "regression": {
+    "cleanExactSourceNpmRunCheck": "FAIL: exact 10b3044d source stops at scripts/test-breeze-runtime-manager.mjs:125 because arch is not passed by that source-era fixture",
+    "currentWorktreeNpmRunCheck": "PASS with OFFLINE_SUBTITLE_TEST_TOOLS_DIR=/Users/nycu/Documents/離線字幕工廠/offline-subtitle-factory-app/tools",
+    "cleanExactSourceDocsCheckFinal": "PASS",
+    "currentWorktreeDiffCheck": "PASS"
+  },
+  "acceptance": {
+    "source": "CONDITIONAL: exact source/package provenance verified, but clean exact-source npm run check exposes the pre-remediation Breeze fixture mismatch",
+    "deterministicAi": "PASS in current worktree regression suite",
+    "ollamaLive": "PASS for packaged path with existing loopback model; model quality returned no changed suggestions",
+    "packagedApp": "CONDITIONAL: macOS arm64 package fully smoke-tested; Windows Setup/Portable/Uninstall remain TEST_GAP",
+    "governance": "PENDING_ROUND2_AND_FINAL_DOCS_CHECK",
+    "stableRelease": "NO"
+  }
+}

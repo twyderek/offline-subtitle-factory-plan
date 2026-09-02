@@ -3,8 +3,8 @@
 ## 支援環境
 
 - Node.js 22.12.0 以上；CI 目前使用 Node.js 22。Electron 43 的安裝工具鏈不再支援 Node 20。
-- 目前 unreleased candidate 為 0.51.0；0.50.1 preparation 已取消／由 0.51.0 取代。LM Studio provider 已移除；官方本機 provider 為 Ollama，`openai-compatible` 僅代表通用 transport。
-- 0.50.0 已鎖定 Electron 43.3.0／electron-builder 26.15.7 並作為 Windows Breeze managed runtime 正式 App 版本發布；依賴或版本更新後必須重跑完整 audit、雙平台封裝與 packaged renderer smoke。既有公開 `v0.49.1` 與 runtime Release 資產保留為歷史／獨立版本，不得覆寫。
+- 目前公開 Release 為 0.51.0；工作樹另有尚未公開的 0.51.1 patch candidate。0.51.0 本機已由乾淨的 `10b3044d31a5367a91faacea46b8def7ee103f7c` 建立 macOS arm64 acceptance-only package，packaged acceptance 為 `CONDITIONAL`：macOS renderer／trim／migration／Ollama 通過；exact source 對應的 Windows Actions run `33483093931` 已完成 Windows 2022 source regression、unsigned Setup／Portable、Setup install／renderer、uninstall、Portable renderer 與 archive checks，但本機／pristine Windows machine 為 TEST_GAP；stable-release recommendation 為 `NO`。0.50.1 preparation 已取消／由 0.51.0 取代。LM Studio provider 已移除；官方本機 provider 為 Ollama，`openai-compatible` 僅代表通用 transport。
+- 0.51.0 沿用 Electron 43.3.0／electron-builder 26.15.7；依賴或來源版本更新後必須重跑完整 audit、雙平台封裝與 packaged renderer smoke。exact `10b3044d…` 的 GitHub Actions run `33483093931` 已在 Windows 2022 完成 source regression、unsigned Setup／Portable、Setup install／renderer、uninstall、Portable renderer 與 archive checks；本機／pristine Windows machine 仍是外部缺口。既有公開 `v0.50.0`、`v0.49.1` 與 runtime Release 資產保留為歷史／獨立版本，不得覆寫。
 - Windows 10/11 x64；封裝由 `windows-2022` runner 執行。
 - Apple Silicon macOS 12 以上。
 
@@ -40,9 +40,14 @@ npm run electron:build:unsigned  # 僅供已明確接受風險的未簽章版本
 - runtime 固定版本並比對 SHA；不得依賴開發機 venv 或系統 PATH。
 - 正式可信發布應配置 `WINDOWS_CODESIGN_PFX_BASE64` 與 `WINDOWS_CODESIGN_PASSWORD`。
 - 未簽章發布必須在 Release notes、狀態檔與交付說明標示 Unknown Publisher／SmartScreen，並附 SHA。
-- Setup、Portable、blockmap、`latest.yml` 的檔名必須彼此一致；上傳後需重新核對 GitHub 實際資產名稱。
-- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；目前 0.51.0 候選封裝必須包含 `docs/BREEZE-ASR-25.md` 與 `RELEASE-NOTES-0.51.0.md`，並維持 Whisper.cpp Tiny 為預設可用路徑。0.50.0 Release notes 仍作為歷史文件保留。
+- Setup、Portable、blockmap、`latest.yml` 的檔名必須彼此一致；上傳後需重新核對 GitHub 實際資產名稱。0.51.0 公開 Windows 六項資產的大小／GitHub digest／公開 SHA256SUMS 已核對；但目前 workflow 只上傳 Actions artifact，沒有 Release upload step，因此每個公開 asset 與 exact workflow artifact 的 provenance 仍須標示 `UNVERIFIED`，不能只因 tag／run SHA 一致就宣稱同源。
+- Breeze checkpoint、Python／PyTorch／patched Whisper runtime 不納入 Windows runtime 或安裝包；0.51.0 封裝應包含 `docs/BREEZE-ASR-25.md` 與 `RELEASE-NOTES-0.51.0.md`，並維持 Whisper.cpp Tiny 為預設可用路徑。0.50.0 Release notes 仍作為歷史文件保留。
 - 0.51.0 候選 build 使用明確 GitHub publish config 產生本機 `latest.yml`／`app-update.yml` metadata；release preparation 指令一律使用 `--publish never`，不得因 metadata 生成而上傳或建立 GitHub Release。unsigned internal preview 必須明確標示未簽章。
+- 0.51.1 preparation build 的 active notes 為 `RELEASE-NOTES-0.51.1.md`；0.51.0 notes 僅作歷史保留。Windows workflow 會在產出 `latest.yml` 後檢查 version／Setup naming／stale candidate text，並將實際 EXE 的 source/run metadata、size 與 SHA-256 寫入 `BUILD-PROVENANCE-windows-x64.json`；本輪只保存 Actions artifact，不建立 Release upload。
+
+### Clean-source test tools contract
+
+`test-core.mjs` 需要可執行的 FFmpeg／FFprobe 與 Whisper.cpp fixture。CI 由 `scripts/prepare-windows-runtime.ps1` 或對應平台 runtime preparation 先把 verified tools 放入候選 checkout 的 `app/tools`；本機 clean-source 驗證必須使用該 checkout 內已驗證、與 host architecture 相符的 tools，或明確設定 `OFFLINE_SUBTITLE_TEST_TOOLS_DIR` 指向同一類 verified directory。這是測試環境契約，不是產品 runtime 依賴；證據與文件不得記錄開發者專屬絕對路徑，也不得把缺少 tools 的 `needs-action` 誤列為通過。
 
 ### Breeze managed runtime build（開發者／CI only）
 

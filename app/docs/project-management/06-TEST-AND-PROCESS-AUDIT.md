@@ -13,6 +13,10 @@
 | 實機 | 安裝、啟動、轉錄、校閱、輸出、解除安裝 | 正式或公開發布 |
 | 發布 | Release 資產、digest、checksum、下載 URL | 每次 Release |
 
+### PREP-0511-20260902：0.51.1 candidate validation plan
+
+本輪候選驗證須以新 commit 的 tracked-clean worktree 執行：`npm ci`、Breeze x64／arm64 focused regression、`npm run docs:check`、完整 `npm run check`、`npm run docs:check:final` 與 `git diff --check`。`test-release-metadata.mjs` 另驗證 package／lockfile／UI marker／release notes／workflow 的 0.51.1 一致性、latest metadata stale-text rejection fixture 與 provenance manifest schema；Windows CI、Windows local／pristine lifecycle、實際 0.51.1 macOS package 及公開 per-asset provenance 若未實際取得，必須分別標示 `NOT_RUN`／`TEST_GAP`／`UNVERIFIED`，不得沿用 0.51.0 evidence 冒充本候選通過。
+
 治理前置流程另以 `test-project-preflight.mjs` 驗證任務路由，確保一般任務不載入完整歷史，發布與 full 類型仍包含必要治理／授權文件；未知類型必須失敗。
 
 ## 六面向獨立審查
@@ -49,13 +53,28 @@
 
 ## 多語言 LLM 開發中驗證
 
-## REL-041 0.51.0 LM Studio removal preparation
+## REL-041 0.51.0 LM Studio removal public release／Acceptance Remediation
 
-- 目前候選版本：`0.51.0`；0.50.1 preparation 已取消／未發布並由本版取代。既有 `v0.50.0` tag、Release 與資產不得修改。
+- 目前版本／公開 Release：`0.51.0`；0.50.1 preparation 已取消／未發布並由本版取代。GitHub `v0.51.0` 已公開；macOS arm64 acceptance-only package 的來源／checksum／內容／renderer／trim／migration／packaged Ollama 證據沿用 round2。exact source 對應 Actions run `33483093931` 在 Windows 2022 完成 source regression、unsigned Setup／Portable build、Setup install／renderer、uninstall、Portable renderer 與 archive checks，故 `WINDOWS_CI_LIFECYCLE=PASS`；本機／pristine Windows machine 仍為 `TEST_GAP`。公開六項 Windows asset 已下載並核對大小／GitHub digest／SHA256SUMS，但 workflow 沒有 Release upload step，`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`；公開 `latest.yml` 與 exact package embedded release notes 的 candidate text 仍是 stale package condition，source release notes 已同步公開狀態。round6 獨立複審後，remediation 文件／證據治理 closeout 為有條件通過；packaged acceptance 為 `CONDITIONAL`，stable-release recommendation 維持 `NO`；既有 `v0.50.0` tag、Release 與資產不得修改。證據：`docs/project-management/evidence/2026-09-02-acceptance-packaged-0510-macos-arm64.json`、`docs/project-management/evidence/2026-09-02-acceptance-packaged-round3.json`、`docs/project-management/reviews/2026-09-02-acceptance-packaged-round6.md`。
 - Active provider scope：保留 Ollama、OpenAI、OpenAI-compatible、Azure、Groq、Gemini；移除 LM Studio registry／adapter／UI／default endpoint／local discovery／LM-only schema special case。通用 JSON Schema 與 Ollama one-shot repair 必須保留。
 - Migration scope：啟動、project import/export 與 browser localStorage 遇到 LM Studio 時清除該 provider 的 endpoint、model、capabilities、secret reference、profile，回到未選擇狀態並顯示一次通知；其他 provider 與 secrets 保留，重跑不得重啟 provider。
 - Regression scope：registry／UI／API rejection、startup migration、secret preservation、idempotence、old import behavior、Ollama parser／one-shot repair／failed checkpoint、Markdown JSON、text parts、nested arrays、non-local strict failure 與 generic JSON Schema preservation。
 - Live provider scope：不在 automated release preparation 中下載模型或啟動服務；沒有使用者已授權 endpoint 時標示 `LIVE_PROVIDER_TESTS=NOT_RUN`，不得以 deterministic mock 取代 live acceptance。
+
+### ACCEPT-051-PACKAGED-ROUND3-20260902 執行結果
+
+- Exact-source baseline：在 tracked-clean `10b3044d31a5367a91faacea46b8def7ee103f7c` worktree（macOS arm64）執行 `node scripts/test-breeze-runtime-manager.mjs`，於第 125 行得到 actual `null`／expected managed Windows x64 `python.exe`；根因是 fixture 未傳 `arch`，resolver 依 host `process.arch=arm64` 正確 fail closed。
+- Breeze 修正與 focused validation：Windows x64 fixture 全部明確傳入 `arch: 'x64'`，新增 Windows arm64 回傳 `null` 的負向斷言；`resolveBreezePython` 保留可選 `arch` seam 並轉傳至 managed resolver。`node scripts/test-breeze-runtime-manager.mjs`、`node scripts/test-breeze-asr.mjs`、兩個 `node --check` 均 exit 0。
+- Clean validation：`npm ci` 完成；使用 `OFFLINE_SUBTITLE_TEST_TOOLS_DIR` 指向既有唯讀 arm64 tools 執行 `npm run check` exit 0，包含 `npm run docs:check`、JavaScript syntax、Breeze、AI deterministic、provider／migration、Ollama streaming、review UI 與 core integration；sandbox 首次阻擋 localhost bind（`EPERM`），取得受控測試權限後重跑通過；`git diff --check` exit 0。
+- Windows CI packaged evidence：run `33483093931`、head SHA exact `10b3044d31a5367a91faacea46b8def7ee103f7c`、runner `windows-2022`、job `Windows x64 test and package`／`99776892605` 為 success。Source regression、unsigned Setup／Portable build、Setup install／renderer、silent uninstall／executable removal、Portable renderer、7z archive test、content exclusions、SHA file 與 Actions artifact upload 均通過。artifact `9790782830`／`offline-subtitle-factory-0.51.0-windows-x64` 為 487,020,484 bytes，Actions uploaded ZIP digest `4a69b338d509846b200504118023768106e3502402b6d9d9ac4d440b15e62793`；本機／pristine Windows 實機未取得，故只判 `CI_WINDOWS_LIFECYCLE=PASS`、`LOCAL_WINDOWS_MACHINE=TEST_GAP`。
+- Public asset checks：公開 `v0.51.0` 六項 Windows asset 已下載；Setup `243,687,067` bytes／`5328c4f0…5616835`、Portable `242,979,811` bytes／`cb6f7d6a…7db89c78`、blockmap `255,227` bytes／`c8dac849…3e21bc0`、`latest.yml` `2,155` bytes／`afef8a7b…a61283`、SHA file `221` bytes／`cbf9208e…fe5f5b`、signing file `91` bytes／`a1dd9e1d…937347` 均與 GitHub API／公開 SHA256SUMS 一致；`latest.yml` Setup SHA-512 與實際下載檔一致。因 workflow 沒有 Release upload step，`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`，不是 `PROVENANCE_MISMATCH`。
+- Windows signing／SmartScreen：公開 `SIGNING-STATUS-windows-x64.txt` 為 `UNSIGNED INTERNAL PREVIEW`；未將 unsigned 判為 package malfunction，但 SmartScreen／Unknown Publisher 仍是已知風險，且本輪沒有解除 `AUTH-2026-07-23-01` 以外的實機條件。
+
+### ACCEPT-051-PACKAGED-ROUND6-20260902 治理 closeout
+
+- round6 獨立複審判定 remediation 文件／證據治理 closeout 為 `有條件通過`；`npm run docs:check:final` 已在整合 round6 report、條件接受與 final gate 後 exit 0，`git diff --check` 亦 exit 0。
+- 條件不變：`PUBLIC_0.51.0_EXACT_SOURCE_BASELINE=FAIL`（既有 public tag 不回寫）、`WINDOWS_LOCAL_PRISTINE_ACCEPTANCE=TEST_GAP`、`PUBLIC_RELEASE_PROVENANCE=UNVERIFIED`、public `latest.yml`／exact package embedded release notes stale；這些條件不等同 stable 0.51.0 放行。
+- `STABLE_RELEASE_RECOMMENDATION=NO`、版本建議 `RECOMMEND_0.51.1_PATCH`；若要解除條件，須以新 patch 版本重建／驗證並取得 Windows local／pristine 與 per-asset upload provenance evidence。
 
 ## REL-040 0.50.1 AI response repair patch release preparation（歷史；已取消／由 REL-041 取代）
 

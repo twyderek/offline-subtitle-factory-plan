@@ -27,6 +27,7 @@
 | Windows runtime／2026-08-24 | Breeze ASR 25 managed runtime Phase 2/3 真實交付 | Runtime Release `breeze-runtime-2026.08.1`、ZIP 286,785,161 bytes／SHA `724e8bcb…bb8bf4b`、license evidence、strict clean Windows API 安裝與真實 JFK transcription 已核對；台灣華語品質、長音訊、GPU 與 macOS managed runtime 仍待另案驗收 |
 | 0.50.0／2026-08-25 | Windows Breeze managed runtime 一鍵安裝正式 App 版本 | tag `v0.50.0`／commit `44c4022` 與 GitHub Latest Release 已公開；7 項 Windows 資產大小／digest／下載回讀核對通過；未簽章、pristine VM、macOS managed runtime、品質與長音訊風險持續揭露 |
 | 0.51.0 candidate／2026-09-01 | 移除 LM Studio provider、保留 Ollama response repair 與安全 migration | 由指定 `main` `0091663a` 建立 `codex/remove-lm-studio`；版本與 release notes 指向 0.51.0；0.50.1 preparation 保留為未發布／已取消的歷史稽核，不建立新 tag／Release |
+| 0.51.1 patch preparation／2026-09-02 | BUG-024 arch seam、active release metadata 與 Windows provenance manifest baseline | 由本機 remediation worktree 建立 `codex/release-0.51.1-preparation`；候選尚未公開，須完成 clean-source regression、Windows CI、packaged acceptance 與獨立審查後才可評估發布 |
 | 0.50.1 preparation／2026-08-31（未發布／已取消） | AI response repair patch release preparation | 歷史候選由 `main` `a111ddd` 建立 `codex/release-0.50.1`；未建立 `v0.50.1` tag／Release，後續由 0.51.0 breaking candidate 取代；原始稽核資料不改寫 |
 
 ## 0.45.1 發布補充

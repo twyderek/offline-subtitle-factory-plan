@@ -101,7 +101,10 @@ function isTextPart(value) {
       && (typeof value.text === 'string' || typeof value.content === 'string'));
 }
 
-function contentToTextFragments(content, fragments = [], seen = new Set()) {
+const MAX_PARSER_DEPTH = 64;
+
+function contentToTextFragments(content, fragments = [], seen = new Set(), depth = 0) {
+  if (depth > MAX_PARSER_DEPTH) return fragments;
   if (typeof content === 'string') {
     fragments.push(content);
     return fragments;
@@ -117,13 +120,13 @@ function contentToTextFragments(content, fragments = [], seen = new Set()) {
       if (isTextPart(nested)) {
         fragments.push(typeof nested === 'string' ? nested : (typeof nested.text === 'string' ? nested.text : nested.content));
       } else {
-        contentToTextFragments(nested, fragments, seen);
+        contentToTextFragments(nested, fragments, seen, depth + 1);
       }
     }
     return fragments;
   }
   for (const nested of Object.values(content)) {
-    contentToTextFragments(nested, fragments, seen);
+    contentToTextFragments(nested, fragments, seen, depth + 1);
   }
   return fragments;
 }
@@ -184,7 +187,8 @@ function extractJsonCandidates(value) {
   return candidates;
 }
 
-function findCueArray(value, allowRootArray = false, seen = { objects: new Set(), strings: new Set() }) {
+function findCueArray(value, allowRootArray = false, seen = { objects: new Set(), strings: new Set() }, depth = 0) {
+  if (depth > MAX_PARSER_DEPTH) return null;
   if (Array.isArray(value)) return allowRootArray ? value : null;
   if (typeof value === 'string') {
     const text = value.trim();
@@ -193,7 +197,7 @@ function findCueArray(value, allowRootArray = false, seen = { objects: new Set()
     for (const candidate of extractJsonCandidates(text)) {
       try {
         const parsed = JSON.parse(candidate);
-        const cues = findCueArray(parsed, allowRootArray, seen);
+        const cues = findCueArray(parsed, allowRootArray, seen, depth + 1);
         if (cues) return cues;
       } catch {}
     }
@@ -210,7 +214,7 @@ function findCueArray(value, allowRootArray = false, seen = { objects: new Set()
       if (key === 'cues') return nested;
       continue;
     }
-    const cues = findCueArray(nested, false, seen);
+    const cues = findCueArray(nested, false, seen, depth + 1);
     if (cues) return cues;
   }
   return null;
@@ -228,14 +232,23 @@ function throwMissingCues() {
   throw error;
 }
 
-function parseCompletionContent(result) {
+function parseCompletionContent(result, validate = null) {
   const rawContent = result?.choices?.[0]?.message?.content;
   const content = contentToText(rawContent);
   if (!content.trim() && (!rawContent || typeof rawContent !== 'object')) throw new Error('AI 未回傳字幕內容');
 
   let parsedJson = Boolean(rawContent && typeof rawContent === 'object' && !Array.isArray(rawContent));
+  let validationError = null;
+  const accept = (cues) => {
+    if (typeof validate !== 'function') return cues;
+    try { return validate(cues); }
+    catch (error) { validationError ||= error; return null; }
+  };
   const directCues = findCueArray(rawContent, false);
-  if (directCues) return directCues;
+  if (directCues) {
+    const accepted = accept(directCues);
+    if (accepted) return accepted;
+  }
 
   const fragments = contentToTextFragments(rawContent);
   const allowRootArray = typeof rawContent === 'string';
@@ -250,10 +263,14 @@ function parseCompletionContent(result) {
         const parsed = JSON.parse(candidate);
         parsedJson = true;
         const cues = findCueArray(parsed, allowRootArray);
-        if (cues) return cues;
+        if (cues) {
+          const accepted = accept(cues);
+          if (accepted) return accepted;
+        }
       } catch {}
     }
   }
+  if (validationError) throw validationError;
   if (parsedJson) throwMissingCues();
   throwInvalidJson();
 }
@@ -471,22 +488,22 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
     let result = await completeWithRetry({ complete, body, signal, config, batchIndex, progress, retryCount });
     let validated;
     try {
-      validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+      validated = parseCompletionContent(result, (parsed) => validateBatch(batch, parsed, mode, outputLanguage));
     } catch (error) {
       if (isTranslation && canRepairTranslationValidation(error, config)) {
         const repairBody = buildTranslationRepairBody(body, batch, outputLanguage);
         result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        validated = parseCompletionContent(result, (parsed) => validateBatch(batch, parsed, mode, outputLanguage));
       } else if (canRepairOllamaLength(error, config)) {
         complete.progress?.({ ...progress, activeBatch: batchIndex + 1, validationRepair: true, validationRepairReason: 'length', totalRetries: retryCount.value });
         const repairBody = buildLengthRepairBody(body, batch, mode, outputLanguage);
         result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        validated = parseCompletionContent(result, (parsed) => validateBatch(batch, parsed, mode, outputLanguage));
       } else if (canRepairLocalJson(error, config)) {
         complete.progress?.({ ...progress, activeBatch: batchIndex + 1, validationRepair: true, totalRetries: retryCount.value });
         const repairBody = buildJsonRepairBody(body, batch, mode, outputLanguage);
         result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        validated = parseCompletionContent(result, (parsed) => validateBatch(batch, parsed, mode, outputLanguage));
       } else {
       // A small local model may return only a term or a malformed rewrite. In
       // terminology mode the deterministic glossary is authoritative, so
