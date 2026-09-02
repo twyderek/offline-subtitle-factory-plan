@@ -36,6 +36,9 @@ assert.match(workflow, /Get-Item \.\.\/dist\/latest\.yml/);
 assert.match(workflow, /Get-Item \.\.\/dist\/SHA256SUMS-windows-x64\.txt/);
 assert.match(workflow, /Get-Item \.\.\/dist\/SIGNING-STATUS-windows-x64\.txt/);
 assert.match(workflow, /\$assetRecords = @\(\$provenanceFiles/);
+const signingStatusWrite = workflow.indexOf("'SIGNED RELEASE: Authenticode signatures are valid.' | Set-Content ../dist/SIGNING-STATUS-windows-x64.txt");
+const signingStatusRead = workflow.indexOf('Get-Item ../dist/SIGNING-STATUS-windows-x64.txt');
+assert.ok(signingStatusWrite >= 0 && signingStatusWrite < signingStatusRead, 'signing status must be created before provenance collection');
 assert.match(workflow, /actions\/upload-artifact@v4/);
 
 function validateLatestMetadata(metadataText, expectedVersion, expectedNotes) {

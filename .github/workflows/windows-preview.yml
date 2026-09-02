@@ -134,6 +134,14 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
             Set-Content ../dist/SHA256SUMS-windows-x64.txt -Encoding utf8
 
+          $signatures = $artifacts | ForEach-Object { Get-AuthenticodeSignature $_.FullName }
+          $allSigned = ($signatures | Where-Object Status -ne 'Valid').Count -eq 0
+          if ($allSigned) {
+            'SIGNED RELEASE: Authenticode signatures are valid.' | Set-Content ../dist/SIGNING-STATUS-windows-x64.txt -Encoding utf8
+          } else {
+            'UNSIGNED INTERNAL PREVIEW: Windows may display Unknown Publisher or SmartScreen warnings.' | Set-Content ../dist/SIGNING-STATUS-windows-x64.txt -Encoding utf8
+          }
+
           $provenanceFiles = @(
             $artifacts
             Get-ChildItem ../dist -Filter '*.blockmap' -File
@@ -157,14 +165,6 @@ jobs:
             packageVersion = '0.51.1'
             assets = $assetRecords
           } | ConvertTo-Json -Depth 6 | Set-Content ../dist/BUILD-PROVENANCE-windows-x64.json -Encoding utf8
-
-          $signatures = $artifacts | ForEach-Object { Get-AuthenticodeSignature $_.FullName }
-          $allSigned = ($signatures | Where-Object Status -ne 'Valid').Count -eq 0
-          if ($allSigned) {
-            'SIGNED RELEASE: Authenticode signatures are valid.' | Set-Content ../dist/SIGNING-STATUS-windows-x64.txt -Encoding utf8
-          } else {
-            'UNSIGNED INTERNAL PREVIEW: Windows may display Unknown Publisher or SmartScreen warnings.' | Set-Content ../dist/SIGNING-STATUS-windows-x64.txt -Encoding utf8
-          }
 
           $uploadDir = Join-Path $PWD '.artifacts/windows-x64'
           New-Item -ItemType Directory -Force -Path $uploadDir | Out-Null
