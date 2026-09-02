@@ -8,18 +8,24 @@
 - 需求來源：需求方要求在 0.51.0 round6 conditional closeout 後，將 BUG-024、source regression、stale Release/package documentation、Windows packaged lifecycle evidence 與 public artifact provenance improvements 帶入新的 0.51.1 patch preparation。
 - 關聯需求／缺陷：`PREP-0511-20260902`、`REL-041`、`BUG-024`、`ACCEPT-051-PACKAGED-ROUND3-20260902`
 - 變更等級：高（版本與發布準備、測試／封裝／治理 workflow 變更；僅 preparation，不含公開發布）
+- 審查／交付屬性：local patch preparation governance closeout；不代表 public release readiness、stable release approval 或公開發布授權。
 - 執行前已讀：`npm run project:preflight -- --type=full` 列出的固定核心與 full 路由文件、round5／round6 report、BUG-024、macOS packaged evidence、Windows round3 evidence（是）
 - 來源基準：public `v0.51.0` peeled target `10b3044d31a5367a91faacea46b8def7ee103f7c`；先保留目前既有 remediation worktree 變更，再建立新的本機 `codex/` patch-preparation source identity。
+- 候選來源身份：`CANDIDATE_VERSION=0.51.1`；`PREPARATION_REVIEWED_COMMIT=c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad`；本機 governance closeout 後的 `FINAL_RELEASE_CANDIDATE_COMMIT` 以本條目完成後 HEAD 為準，未在本輪指定為公開 target。
 - 本輪目標：將已驗證 remediation 納入 `0.51.1` candidate；補上 embedded Release notes／latest metadata 狀態檢查與可回溯 provenance workflow 基準；完成 clean-source regression、封裝可得性核對、文件同步與獨立 review。
+- 實際修改：完成 0.51.1 package／lockfile／UI marker／release notes 同步；加入 Release metadata regression、Windows provenance manifest 與 signing-status lifecycle contract；更新 current-state／稽核／evidence；保留 round1～round6 review 原文。
 - 不在範圍：不修改 `v0.51.0` tag／Release／assets、不 silent republish 0.51.0、不建立 `v0.51.1` public tag／GitHub Release、不把 Windows CI 當作 pristine Windows PASS、不把 digest match 當成 per-asset provenance VERIFIED。
 - 風險與回復方式：保留公開 0.51.0 的 exact baseline FAIL、Windows local／pristine `TEST_GAP`、public provenance `UNVERIFIED` 與歷史 stale metadata；若 0.51.1 clean source、package、CI 或治理 gate 任何一項失敗，candidate 維持 `NOT_READY`，不發布。
 - 驗證結果：`c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad` tracked-clean worktree 的 `npm ci`、完整 `npm run check`、Breeze x64／arm64、release metadata、`npm run docs:check` 與 `git diff --check` 均 PASS；macOS arm64 DMG／ZIP／blockmap／`latest-mac.yml`、archive／DMG verify／ad-hoc codesign／embedded notes／renderer smoke 均 PASS。Windows workflow static lifecycle／provenance contract PASS；Windows CI=`NOT_RUN_THIS_PREPARATION`、Windows local／pristine=`TEST_GAP`、public per-asset provenance=`UNVERIFIED`。round6 後重跑 `npm run docs:check:final` PASS。
 - Final gate：`PATCH_SOURCE_COMMIT=c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad`；`BUG_024=FIXED_AND_REGRESSED`；`CLEAN_SOURCE_NPM_CHECK=PASS`；`MACOS_PACKAGED_ACCEPTANCE_ONLY=PASS`；`MACOS_RENDERER_SMOKE=PASS`；`WINDOWS_WORKFLOW_STATIC_CONTRACT=PASS`；`WINDOWS_CI=NOT_RUN_THIS_PREPARATION`；`WINDOWS_LOCAL_PRISTINE=TEST_GAP`；`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`；`DOCS_CHECK_FINAL=PASS`；`STABLE_RELEASE_RECOMMENDATION=NO`；`PATCH_RELEASE_RECOMMENDATION=NOT_READY_EXTERNAL_GATES_REQUIRED`；`PATCH_RELEASE_PREPARATION=NOT_READY`。證據：`docs/project-management/evidence/2026-09-02-patch-preparation-0511.json`。
 - 獨立審查是否執行：是（round1、round2、round3、round4、round5、round6；round6 完成 final closeout 複審）
+- round6 結論：有條件通過（local preparation closeout；external release gates 仍未完成）
 - 發布授權：不適用（本輪僅本機 preparation；不建立公開 tag／Release／assets；未使用 `AUTH-2026-07-23-01` 執行發布）
 - 審查檔案：`docs/project-management/reviews/2026-09-02-patch-preparation-round6.md`
 - 判定（逐字引用審查檔案完整結論句）：**本輪 round6 確認 source、BUG-024 regression、macOS package 與 renderer smoke、Windows workflow lifecycle／provenance static contract 均與 evidence 一致；暫態 final gate 不構成新缺陷，故 0.51.1 preparation 有條件通過，但最新工作紀錄待主要代理引用本 round6 報告並重跑 docs:check:final，且 Windows 外部 gates 完成前不得公開發布。**
 - 條件是否已被需求方接受：是（接受 0.51.1 僅完成 local preparation、Windows CI／pristine 與 public provenance 未完成即維持 `NOT_READY` 的結論；不等同 stable release 或公開發布授權）
+- 部署／發布結果：local preparation governance closeout 已完成；未 push、未建立／移動 `v0.51.1` tag、未建立 GitHub Release、未上傳 public assets，既有 `v0.51.0` tag／Release／assets 未修改。
+- 下一階段必要行動：Windows CI；Windows local/pristine；public upload provenance；final independent release review；explicit release authorization。
 - 遺留風險與後續事項：需在明確授權下執行 Windows CI，取得 Windows local／pristine lifecycle 與 public per-asset upload provenance；另需確認簽章／公證、真實 Breeze runtime／模型與長音訊品質。上述 gate 完成前不得 push、建立 tag／Release 或宣稱穩定發布。
 
 

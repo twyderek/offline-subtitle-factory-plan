@@ -5,6 +5,8 @@
   "candidateVersion": "0.51.1",
   "candidateBranch": "codex/release-0.51.1-preparation",
   "patchSourceCommit": "c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad",
+  "preparationReviewedCommit": "c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad",
+  "publicReleaseCandidateCommit": null,
   "publicBaseline": {
     "version": "0.51.0",
     "tag": "v0.51.0",
@@ -71,6 +73,16 @@
     "localPristineLifecycle": "TEST_GAP",
     "artifactProvenance": "PREPARED_UNVERIFIED",
     "publicReleaseUpload": "NOT_RUN"
+  },
+  "round6Closeout": {
+    "report": "docs/project-management/reviews/2026-09-02-patch-preparation-round6.md",
+    "conclusion": "CONDITIONAL_PASS",
+    "integrated": true,
+    "docsCheck": "PASS",
+    "docsCheckFinal": "PASS",
+    "projectDocsValidator": "PASS",
+    "diffCheck": "PASS",
+    "governanceCloseout": "PASS"
   },
   "releaseBoundary": {
     "publicTagCreated": false,
