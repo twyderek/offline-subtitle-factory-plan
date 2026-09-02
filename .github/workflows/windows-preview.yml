@@ -134,7 +134,14 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
             Set-Content ../dist/SHA256SUMS-windows-x64.txt -Encoding utf8
 
-          $assetRecords = @($artifacts | ForEach-Object {
+          $provenanceFiles = @(
+            $artifacts
+            Get-ChildItem ../dist -Filter '*.blockmap' -File
+            Get-Item ../dist/latest.yml
+            Get-Item ../dist/SHA256SUMS-windows-x64.txt
+            Get-Item ../dist/SIGNING-STATUS-windows-x64.txt
+          ) | Sort-Object Name -Unique
+          $assetRecords = @($provenanceFiles | ForEach-Object {
             $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             [ordered]@{ name = $_.Name; size = $_.Length; sha256 = $hash }
           })

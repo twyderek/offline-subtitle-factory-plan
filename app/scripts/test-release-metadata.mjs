@@ -30,6 +30,12 @@ assert.doesNotMatch(workflow, /RELEASE-NOTES-0\.51\.0|setup-0\.51\.0|portable-0\
 assert.match(workflow, /RELEASE-NOTES-0\.51\.1\.md/);
 assert.match(workflow, /BUILD-PROVENANCE-windows-x64\.json/);
 assert.match(workflow, /sourceCommit = \$env:GITHUB_SHA/);
+assert.match(workflow, /\$provenanceFiles = @\(/);
+assert.match(workflow, /Get-ChildItem \.\.\/dist -Filter '\*\.blockmap'/);
+assert.match(workflow, /Get-Item \.\.\/dist\/latest\.yml/);
+assert.match(workflow, /Get-Item \.\.\/dist\/SHA256SUMS-windows-x64\.txt/);
+assert.match(workflow, /Get-Item \.\.\/dist\/SIGNING-STATUS-windows-x64\.txt/);
+assert.match(workflow, /\$assetRecords = @\(\$provenanceFiles/);
 assert.match(workflow, /actions\/upload-artifact@v4/);
 
 function validateLatestMetadata(metadataText, expectedVersion, expectedNotes) {

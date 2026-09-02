@@ -17,6 +17,13 @@
 
 本輪候選驗證須以新 commit 的 tracked-clean worktree 執行：`npm ci`、Breeze x64／arm64 focused regression、`npm run docs:check`、完整 `npm run check`、`npm run docs:check:final` 與 `git diff --check`。`test-release-metadata.mjs` 另驗證 package／lockfile／UI marker／release notes／workflow 的 0.51.1 一致性、latest metadata stale-text rejection fixture 與 provenance manifest schema；Windows CI、Windows local／pristine lifecycle、實際 0.51.1 macOS package 及公開 per-asset provenance 若未實際取得，必須分別標示 `NOT_RUN`／`TEST_GAP`／`UNVERIFIED`，不得沿用 0.51.0 evidence 冒充本候選通過。
 
+### PREP-0511-20260902：實際驗證結果（round1 前）
+
+- tracked-clean candidate commit `75b24daaac9a00536e402565cadbe031200deef2` 的 `npm ci`、完整 `npm run check`、Breeze manager／ASR、release metadata contract、`npm run docs:check` 與 `git diff --check` 均 exit 0。
+- macOS arm64 acceptance-only package 已由該 clean source 建立；DMG／ZIP、blockmap、`latest-mac.yml`、版本／active release notes 與 ad-hoc codesign 均已核對，詳見 `evidence/2026-09-02-patch-preparation-0511.json`。package 沒有發布。
+- packaged renderer verifier 在本機 host 未於 timeout 內找到 page target，標示 `TEST_GAP`；不能以 source `npm run check` 或 package archive pass 代替 renderer／安裝後 smoke。
+- Windows workflow static contract 通過；本輪未推送，因此 Windows CI／artifact、Windows local／pristine lifecycle、Release upload provenance 均分別為 `NOT_RUN`／`TEST_GAP`／`UNVERIFIED`。
+
 治理前置流程另以 `test-project-preflight.mjs` 驗證任務路由，確保一般任務不載入完整歷史，發布與 full 類型仍包含必要治理／授權文件；未知類型必須失敗。
 
 ## 六面向獨立審查

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-02",
+  "repository": "twyderek/offline-subtitle-factory-plan",
+  "candidateVersion": "0.51.1",
+  "candidateBranch": "codex/release-0.51.1-preparation",
+  "patchSourceCommit": "75b24daaac9a00536e402565cadbe031200deef2",
+  "publicBaseline": {
+    "version": "0.51.0",
+    "tag": "v0.51.0",
+    "peeledCommit": "10b3044d31a5367a91faacea46b8def7ee103f7c",
+    "modified": false
+  },
+  "cleanSourceValidation": {
+    "worktree": ".acceptance-worktrees/osf-0511-75b24da",
+    "npmCi": "PASS",
+    "npmRunCheck": "PASS",
+    "breezeRuntimeManager": "PASS",
+    "breezeAsr": "PASS",
+    "releaseMetadataContract": "PASS",
+    "docsCheck": "PASS",
+    "docsCheckFinal": "PENDING_INDEPENDENT_REVIEW",
+    "diffCheck": "PASS",
+    "testToolsContract": "PASS_WITH_IGNORED_CLEAN_WORKTREE_TOOLS"
+  },
+  "macosArm64AcceptanceOnlyPackage": {
+    "buildCommand": "npm run electron:build:mac -- --config.directories.output=../dist/acceptance-0.51.1-75b24da --publish never",
+    "packageProvenance": "VERIFIED_FROM_CLEAN_CANDIDATE_COMMIT",
+    "appVersion": "0.51.1",
+    "target": "darwin-arm64",
+    "artifacts": [
+      {
+        "name": "offline-subtitle-factory-0.51.1-macos-arm64.dmg",
+        "size": 241396188,
+        "sha256": "3f6431a82fa6078bab7176cbd4a81de6c821648ecb15779615905a50634917b2"
+      },
+      {
+        "name": "offline-subtitle-factory-0.51.1-macos-arm64.dmg.blockmap",
+        "size": 253252,
+        "sha256": "22be9aee085153e1da525b23411c87eaf3d62dcb4fbce4abac809d875c63db37"
+      },
+      {
+        "name": "offline-subtitle-factory-0.51.1-macos-arm64.zip",
+        "size": 248260213,
+        "sha256": "efef003f30a3cd12c4cde91ffcb070650ca1373ce91e1dda995a025d4e9b1874"
+      },
+      {
+        "name": "offline-subtitle-factory-0.51.1-macos-arm64.zip.blockmap",
+        "size": 257550,
+        "sha256": "3ebbebba8f598e877aec5af575446af718f41bd8dc5d937c28bc165a86d87cef"
+      },
+      {
+        "name": "latest-mac.yml",
+        "size": 3015,
+        "sha256": "ce2dd5991f0b95fd8c9f4d46c4e89fe516316aa91cb9ac0038fae3be4052f6b8"
+      }
+    ],
+    "archiveChecks": {
+      "zipTest": "PASS",
+      "dmgVerify": "PASS",
+      "deepStrictAdHocCodesign": "PASS",
+      "activeReleaseNotesEmbedded": "PASS",
+      "latestMacMetadataVersionAndNames": "PASS",
+      "rendererSmoke": "TEST_GAP",
+      "rendererSmokeReason": "verify-electron-renderer.mjs timed out before finding a page target on this host; no PASS claim is made"
+    }
+  },
+  "windows": {
+    "workflowStaticContract": "PASS",
+    "ciRun": "NOT_RUN_THIS_PREPARATION",
+    "localPristineLifecycle": "TEST_GAP",
+    "artifactProvenance": "PREPARED_UNVERIFIED",
+    "publicReleaseUpload": "NOT_RUN"
+  },
+  "releaseBoundary": {
+    "publicTagCreated": false,
+    "publicReleaseCreated": false,
+    "publicAssetsModified": false,
+    "pushPerformed": false,
+    "stableReleaseRecommendation": "NO",
+    "patchPreparation": "NOT_READY_EXTERNAL_GATES_REQUIRED"
+  }
+}
