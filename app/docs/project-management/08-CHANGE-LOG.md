@@ -2,8 +2,8 @@
 
 ## 2026-09-02 — Offline Subtitle Factory 0.51.1 Patch Release Preparation（PREP-0511-20260902）
 
-- 狀態：進行中
-- 結案判定：建立 0.51.1 patch candidate 的可追溯 source／版本／測試／封裝治理基準；不修改、不重建、不替換公開 `v0.51.0` tag／Release／assets，不建立公開 `v0.51.1` tag／Release。
+- 狀態：完成
+- 結案判定：0.51.1 local patch preparation baseline 完成；source、clean regression、macOS arm64 acceptance-only package、renderer smoke、metadata contract、provenance workflow lifecycle 與六輪獨立審查已收斂。Windows CI／local-pristine／public upload provenance 尚未完成，故 `PATCH_RELEASE_PREPARATION=NOT_READY`，不建立公開 `v0.51.1` tag／Release。
 - 執行者：Codex 主要開發代理
 - 需求來源：需求方要求在 0.51.0 round6 conditional closeout 後，將 BUG-024、source regression、stale Release/package documentation、Windows packaged lifecycle evidence 與 public artifact provenance improvements 帶入新的 0.51.1 patch preparation。
 - 關聯需求／缺陷：`PREP-0511-20260902`、`REL-041`、`BUG-024`、`ACCEPT-051-PACKAGED-ROUND3-20260902`
@@ -13,9 +13,14 @@
 - 本輪目標：將已驗證 remediation 納入 `0.51.1` candidate；補上 embedded Release notes／latest metadata 狀態檢查與可回溯 provenance workflow 基準；完成 clean-source regression、封裝可得性核對、文件同步與獨立 review。
 - 不在範圍：不修改 `v0.51.0` tag／Release／assets、不 silent republish 0.51.0、不建立 `v0.51.1` public tag／GitHub Release、不把 Windows CI 當作 pristine Windows PASS、不把 digest match 當成 per-asset provenance VERIFIED。
 - 風險與回復方式：保留公開 0.51.0 的 exact baseline FAIL、Windows local／pristine `TEST_GAP`、public provenance `UNVERIFIED` 與歷史 stale metadata；若 0.51.1 clean source、package、CI 或治理 gate 任何一項失敗，candidate 維持 `NOT_READY`，不發布。
-- 驗證計畫：先核對 active version sources／workflow；建立 `codex/release-0.51.1-preparation` 本機分支並形成新 source identity；執行 Breeze、AI、clean-source `npm ci`／`npm run check`／docs final／diff、package embedded metadata regression；可得時核對 Windows CI／macOS package，最後由獨立上下文依九項 patch review 面向審查。
-- 獨立審查是否執行：是（完成 preparation 變更與驗證後建立 round1）
+- 驗證結果：`c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad` tracked-clean worktree 的 `npm ci`、完整 `npm run check`、Breeze x64／arm64、release metadata、`npm run docs:check` 與 `git diff --check` 均 PASS；macOS arm64 DMG／ZIP／blockmap／`latest-mac.yml`、archive／DMG verify／ad-hoc codesign／embedded notes／renderer smoke 均 PASS。Windows workflow static lifecycle／provenance contract PASS；Windows CI=`NOT_RUN_THIS_PREPARATION`、Windows local／pristine=`TEST_GAP`、public per-asset provenance=`UNVERIFIED`。round6 後重跑 `npm run docs:check:final` PASS。
+- Final gate：`PATCH_SOURCE_COMMIT=c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad`；`BUG_024=FIXED_AND_REGRESSED`；`CLEAN_SOURCE_NPM_CHECK=PASS`；`MACOS_PACKAGED_ACCEPTANCE_ONLY=PASS`；`MACOS_RENDERER_SMOKE=PASS`；`WINDOWS_WORKFLOW_STATIC_CONTRACT=PASS`；`WINDOWS_CI=NOT_RUN_THIS_PREPARATION`；`WINDOWS_LOCAL_PRISTINE=TEST_GAP`；`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`；`DOCS_CHECK_FINAL=PASS`；`STABLE_RELEASE_RECOMMENDATION=NO`；`PATCH_RELEASE_RECOMMENDATION=NOT_READY_EXTERNAL_GATES_REQUIRED`；`PATCH_RELEASE_PREPARATION=NOT_READY`。證據：`docs/project-management/evidence/2026-09-02-patch-preparation-0511.json`。
+- 獨立審查是否執行：是（round1、round2、round3、round4、round5、round6；round6 完成 final closeout 複審）
 - 發布授權：不適用（本輪僅本機 preparation；不建立公開 tag／Release／assets；未使用 `AUTH-2026-07-23-01` 執行發布）
+- 審查檔案：`docs/project-management/reviews/2026-09-02-patch-preparation-round6.md`
+- 判定（逐字引用審查檔案完整結論句）：**本輪 round6 確認 source、BUG-024 regression、macOS package 與 renderer smoke、Windows workflow lifecycle／provenance static contract 均與 evidence 一致；暫態 final gate 不構成新缺陷，故 0.51.1 preparation 有條件通過，但最新工作紀錄待主要代理引用本 round6 報告並重跑 docs:check:final，且 Windows 外部 gates 完成前不得公開發布。**
+- 條件是否已被需求方接受：是（接受 0.51.1 僅完成 local preparation、Windows CI／pristine 與 public provenance 未完成即維持 `NOT_READY` 的結論；不等同 stable release 或公開發布授權）
+- 遺留風險與後續事項：需在明確授權下執行 Windows CI，取得 Windows local／pristine lifecycle 與 public per-asset upload provenance；另需確認簽章／公證、真實 Breeze runtime／模型與長音訊品質。上述 gate 完成前不得 push、建立 tag／Release 或宣稱穩定發布。
 
 
 ## 2026-09-02 — Offline Subtitle Factory 0.51.0 Packaged Acceptance Remediation round3（ACCEPT-051-PACKAGED-ROUND3-20260902）
