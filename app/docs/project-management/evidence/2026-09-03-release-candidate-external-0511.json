@@ -6,6 +6,36 @@
   "candidateBranch": "codex/release-0.51.1-preparation",
   "preparationReviewedCommit": "c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad",
   "externalValidationSourceCommit": "b183d4fd5741bcc7a905d8b8299fa740110107ee",
+  "continuationCheck": {
+    "recordedAt": "2026-09-03T14:05:37+08:00",
+    "currentCheckoutCommit": "9dd3158788f5194e330830704462a88fe99cba8c",
+    "priorExternalSourceCommit": "b183d4fd5741bcc7a905d8b8299fa740110107ee",
+    "currentCheckoutDelta": {
+      "status": "GOVERNANCE_ONLY",
+      "files": [
+        "app/docs/project-management/08-CHANGE-LOG.md",
+        "app/docs/project-management/evidence/2026-09-03-release-candidate-external-0511.json",
+        "app/docs/project-management/reviews/2026-09-03-release-candidate-external-0511-round1.md"
+      ],
+      "productionRendererPackagingWorkflowRuntimeBehaviorChanged": false
+    },
+    "lowCostChecks": {
+      "releaseMetadata": "PASS",
+      "docsCheck": "PASS",
+      "diffCheck": "PASS"
+    },
+    "remoteRead": {
+      "status": "PASS",
+      "candidateBranchSha": null,
+      "v0511TagSha": null,
+      "mainSha": "10b3044d31a5367a91faacea46b8def7ee103f7c"
+    },
+    "githubAuth": "BLOCKED_TOKEN_INVALID",
+    "pushAuthorization": "NOT_GRANTED",
+    "windowsHostInventory": "NO_APPROVED_WINDOWS_HOST_VISIBLE",
+    "action": "STOPPED_PER_EXTERNAL_VALIDATION_STOP_CONDITION",
+    "newRound2Review": "NOT_CREATED_NO_NEW_EXTERNAL_EVIDENCE"
+  },
   "sourceGate": {
     "npmCi": "PASS",
     "npmRunCheck": "PASS",
