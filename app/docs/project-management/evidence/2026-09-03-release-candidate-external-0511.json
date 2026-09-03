@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-03",
+  "repository": "twyderek/offline-subtitle-factory-plan",
+  "candidateVersion": "0.51.1",
+  "candidateBranch": "codex/release-0.51.1-preparation",
+  "preparationReviewedCommit": "c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad",
+  "externalValidationSourceCommit": "b183d4fd5741bcc7a905d8b8299fa740110107ee",
+  "sourceGate": {
+    "npmCi": "PASS",
+    "npmRunCheck": "PASS",
+    "docsCheck": "PASS",
+    "docsCheckFinal": "PASS",
+    "diffCheck": "PASS",
+    "testToolsContract": "PASS_WITH_IGNORED_CLEAN_WORKTREE_TOOLS",
+    "testToolsReason": "Clean candidate worktree has no bundled macOS FFmpeg/Whisper tools; full check passed with the existing same-architecture read-only tools directory."
+  },
+  "windowsCi": {
+    "workflow": "Build Windows 0.51.1",
+    "workflowFile": ".github/workflows/windows-preview.yml",
+    "trigger": "workflow_dispatch",
+    "status": "NOT_RUN_NO_REMOTE_CANDIDATE",
+    "runId": null,
+    "headSha": null,
+    "branch": null,
+    "jobId": null,
+    "runner": "windows-2022",
+    "conclusion": "NOT_RUN",
+    "reason": "Remote has only main@10b3044d; candidate b183d4f is local-only. GitHub CLI authentication is invalid, and this round does not authorize push or re-authentication."
+  },
+  "windowsArtifact": {
+    "status": "NOT_AVAILABLE",
+    "artifactId": null,
+    "artifactName": null,
+    "size": null,
+    "digest": null,
+    "sourceCommit": null
+  },
+  "windowsPerAssetProvenance": {
+    "status": "NOT_AVAILABLE",
+    "internalConsistency": "NOT_RUN",
+    "assets": []
+  },
+  "windowsSigning": {
+    "status": "NOT_RUN",
+    "expectedPolicy": "UNSIGNED_CANDIDATE_ALLOWED_WITH_EXPLICIT_DISCLOSURE"
+  },
+  "windowsPristine": {
+    "status": "TEST_GAP",
+    "setup": "TEST_GAP",
+    "portable": "TEST_GAP",
+    "migration": "TEST_GAP",
+    "uninstall": "TEST_GAP",
+    "smartScreen": "NOT_AVAILABLE",
+    "signing": "NOT_RUN",
+    "reason": "No approved Windows 10/11 host or VM was available in this round; no CI artifact exists to identify as the pristine test package."
+  },
+  "macosEvidence": {
+    "status": "REUSED_FROM_PREPARATION",
+    "sourcePackageCommit": "c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad",
+    "reuseReason": "b183d4f is governance-only after the reviewed candidate; no production, renderer, packaging, build workflow, or runtime behavior changed after the c3e7b7d package evidence.",
+    "package": "PASS",
+    "renderer": "PASS",
+    "signing": "AD_HOC_ONLY",
+    "notarization": "NOT_NOTARIZED",
+    "evidenceFile": "docs/project-management/evidence/2026-09-02-patch-preparation-0511.json"
+  },
+  "publicProvenancePipeline": {
+    "status": "READY_FOR_FUTURE_RELEASE_UPLOAD",
+    "staticWorkflowContract": "PASS",
+    "publicReleaseUpload": "NOT_RUN",
+    "publicReleaseProvenance": "UNVERIFIED",
+    "chain": "source commit -> workflow run -> artifact -> asset SHA -> future authorized Release upload -> public digest"
+  },
+  "externalReview": {
+    "report": "docs/project-management/reviews/2026-09-03-release-candidate-external-0511-round1.md",
+    "round": "round1",
+    "conclusion": "FAIL",
+    "candidateAcceptance": "BLOCKED",
+    "stableReleaseRecommendation": "NO",
+    "authorization": "NOT_GRANTED"
+  },
+  "releaseAuthorization": "NOT_REQUESTED",
+  "publicReleaseReadiness": "NOT_READY",
+  "stableReleaseRecommendation": "NO"
+}

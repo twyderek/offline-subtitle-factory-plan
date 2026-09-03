@@ -1,5 +1,36 @@
 # 改版與工作紀錄
 
+## 2026-09-03 — Offline Subtitle Factory 0.51.1 Release Candidate External Validation（ACCEPT-0511-EXTERNAL-20260903）
+
+- 狀態：進行中
+- 需求來源：需求方要求延續 0.51.1 local preparation，啟動 Release Candidate External Validation；本輪只處理 Windows CI、Windows local／pristine、artifact／public provenance 與 external review，不自動發布。
+- 來源基準：`PREPARATION_REVIEWED_COMMIT=c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad`；目前 candidate source 起點為 `b183d4fd5741bcc7a905d8b8299fa740110107ee`；branch `codex/release-0.51.1-preparation`；candidate version `0.51.1`。
+- 變更等級：高（external validation、Windows／provenance release gates 與獨立發布審查；本輪不含公開發布）。
+- 目標與成功條件：固定單一 external-validation source identity；完成 source gate；若可用則取得同源 Windows workflow run／artifact／per-file provenance 與至少一個 Windows clean／pristine lifecycle；保存 macOS acceptance-only evidence reuse reason；建立 external review；本輪不超過 `READY_FOR_AUTHORIZATION`，不等同 RELEASED。
+- 不在範圍：不修改產品功能、不重跑無必要的 macOS package、不使用舊 0.51.0 run 冒充 0.51.1、不修改 v0.51.0 tag／Release／assets、不建立 v0.51.1 tag／GitHub Release、不上傳 public assets、不自動 push。
+- 發布安全界線：external validation 即使通過也只允許形成 `READY_FOR_AUTHORIZATION`；公開發布須另取得 final independent release review 與 explicit release authorization。
+- Windows CI plan：從固定 `EXTERNAL_VALIDATION_SOURCE_COMMIT` 觸發 `.github/workflows/windows-preview.yml`，核對 head SHA、run／job／runner identity、完整 lifecycle、artifact ID／digest、SHA256SUMS、SIGNING-STATUS 與 provenance metadata；head 不一致或 required step failure 不判 PASS。
+- Windows pristine plan：只使用同一 Windows CI artifact，核對 Setup／Portable SHA 後，在 approved Windows 10／11 clean host 驗證 install／launch／renderer／restart／migration／uninstall／user-data boundary／SmartScreen；無可用環境則維持 `TEST_GAP`。
+- Artifact provenance plan：建立 source commit → workflow run → artifact → asset SHA →（未來授權後）Release upload → public digest 的鏈結；本輪不執行 public upload，未取得前維持 `PUBLIC_RELEASE_PROVENANCE=UNVERIFIED`。
+- Independent review plan：external evidence 完成後建立 `0.51.1 Release Candidate External Validation round1` 六面向獨立審查，僅由 reviewer 新增 report，不修改 production、tests、workflow、evidence、tag 或 Release。
+- Stable-release gate：Windows CI、artifact provenance、必要 package smoke、Windows pristine 或已接受的 TEST_GAP、external review 與 explicit authorization 均未完成前，`STABLE_RELEASE_RECOMMENDATION=NO`。
+- 驗證計畫：先執行 source `npm ci`／`npm run check`／docs gates／diff check，再執行 Windows external gate；若本輪只產生 evidence／治理文件，沿用已驗證 macOS evidence，不重建 macOS package。
+- 開發驗證結果：candidate `b183d4fd...` detached clean worktree 的 `npm ci`、完整 `npm run check`、`npm run docs:check`、`npm run docs:check:final` 與 `git diff --check` 均 PASS；完整 check 使用既有同架構唯讀 test tools，未將缺少 clone tools 的首次 `needs-action` 或 sandbox localhost `EPERM` 誤列為 source failure。
+- Windows CI 結果：遠端僅有 `main@10b3044d...`，沒有 candidate branch／tag；本機 `gh auth status` 顯示 token invalid，且本輪不授權 push／重新登入，因此 `WINDOWS_CI=NOT_RUN_NO_REMOTE_CANDIDATE`，沒有 run／job／artifact 可記錄，不沿用舊 0.51.0 run。
+- Windows artifact／pristine 結果：`WINDOWS_ARTIFACT_PROVENANCE=NOT_AVAILABLE`；沒有同源 CI artifact，且沒有 approved Windows 10／11 host／VM，故 Setup、Portable、migration、uninstall、SmartScreen 與 Authenticode 均未執行，`WINDOWS_LOCAL_PRISTINE=TEST_GAP`。
+- macOS evidence reuse：`b183d4f` 相對 preparation reviewed commit 僅含治理／文件變更，未修改 production、renderer、packaging、build workflow 或 runtime behavior；沿用 `2026-09-02-patch-preparation-0511.json` 的 macOS arm64 package／renderer PASS、ad-hoc only／not notarized evidence，不重建 package。
+- Public provenance 結果：Windows workflow 的 per-asset provenance／SHA256SUMS／SIGNING-STATUS static contract 為 PASS，`PUBLIC_PROVENANCE_PIPELINE=READY_FOR_FUTURE_RELEASE_UPLOAD`；本輪 `PUBLIC_RELEASE_UPLOAD=NOT_RUN`、`PUBLIC_RELEASE_PROVENANCE=UNVERIFIED`。
+- External review 結果：已建立 `0.51.1 Release Candidate External Validation round1`；獨立審查判定 `EXTERNAL_CANDIDATE_ACCEPTANCE=BLOCKED`、`REVIEW_CONCLUSION=不通過`、`STABLE_RELEASE_RECOMMENDATION=NO`。原因是 candidate 未推送、GitHub token invalid、Windows CI／artifact／pristine lifecycle 未取得、public provenance 未驗證，且未取得發布授權。報告：`docs/project-management/reviews/2026-09-03-release-candidate-external-0511-round1.md`。
+- 外部獨立審查輪次：round1
+- 審查檔案：`docs/project-management/reviews/2026-09-03-release-candidate-external-0511-round1.md`
+- 判定（逐字引用審查檔案完整結論句）：**本輪 0.51.1 external validation 的 source gate 與 c3e7b7d macOS acceptance-only evidence reuse 均有可回溯證據，但 candidate 未推送、遠端目前僅有 main@10b3044d、GitHub token invalid，且沒有同源 Windows CI run／artifact／Setup／Portable／migration／uninstall／pristine lifecycle 或 public per-asset provenance，因此 external candidate acceptance 被阻擋，stable recommendation 維持 NO；本報告不授權任何 push、tag、Release 或公開發布。**
+- 條件是否已被需求方接受：否（本輪尚未取得 push／重新登入或公開發布授權；Windows CI、同源 artifact、pristine lifecycle 與 public provenance 必須在明確授權後另行驗證）
+- 實際結果（本輪階段）：本輪 external validation 嘗試已完成但因前置授權／遠端 candidate 缺失而 blocked；latest entry 維持 `進行中`，不將不通過 review 改寫成通過。Evidence：`docs/project-management/evidence/2026-09-03-release-candidate-external-0511.json`。
+- External validation 結案條件：取得明確授權後將 candidate 暴露給正式 Windows workflow，確認 run head SHA 等於 `b183d4fd...`，取得同源 artifact／per-file provenance 與 approved Windows pristine lifecycle；完成後另建 final independent release review。此條件完成前維持 `PUBLIC_RELEASE_READINESS=NOT_READY`、`STABLE_RELEASE_RECOMMENDATION=NO`。
+- 獨立審查是否執行：是（external evidence 完成後建立新的 `0.51.1 Release Candidate External Validation round1`）
+- 發布授權：不適用（本輪不 push、不建立 tag／Release、不上傳 public assets；不得以 preparation 或 CI 結果推定公開發布授權）
+- 遺留風險與後續事項：Windows runner／host 可得性、Authenticode／SmartScreen、public Release upload provenance、macOS 未公證、Breeze 真實 runtime／模型與長音訊品質仍須依實際證據判定；本條目完成前保持 `PUBLIC_RELEASE_READINESS=NOT_READY`。
+
 ## 2026-09-02 — Offline Subtitle Factory 0.51.1 Patch Release Preparation（PREP-0511-20260902）
 
 - 狀態：完成
