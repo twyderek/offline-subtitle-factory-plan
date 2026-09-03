@@ -78,9 +78,11 @@
     "report": "docs/project-management/reviews/2026-09-02-patch-preparation-round6.md",
     "conclusion": "CONDITIONAL_PASS",
     "integrated": true,
+    "latestEntryClosed": true,
     "docsCheck": "PASS",
     "docsCheckFinal": "PASS",
     "projectDocsValidator": "PASS",
+    "releaseMetadataTest": "PASS",
     "diffCheck": "PASS",
     "governanceCloseout": "PASS"
   },

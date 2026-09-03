@@ -19,6 +19,7 @@
 - 驗證結果：`c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad` tracked-clean worktree 的 `npm ci`、完整 `npm run check`、Breeze x64／arm64、release metadata、`npm run docs:check` 與 `git diff --check` 均 PASS；macOS arm64 DMG／ZIP／blockmap／`latest-mac.yml`、archive／DMG verify／ad-hoc codesign／embedded notes／renderer smoke 均 PASS。Windows workflow static lifecycle／provenance contract PASS；Windows CI=`NOT_RUN_THIS_PREPARATION`、Windows local／pristine=`TEST_GAP`、public per-asset provenance=`UNVERIFIED`。round6 後重跑 `npm run docs:check:final` PASS。
 - Final gate：`PATCH_SOURCE_COMMIT=c3e7b7da6b0f62dec52f9d65da4d60294e7f3bad`；`BUG_024=FIXED_AND_REGRESSED`；`CLEAN_SOURCE_NPM_CHECK=PASS`；`MACOS_PACKAGED_ACCEPTANCE_ONLY=PASS`；`MACOS_RENDERER_SMOKE=PASS`；`WINDOWS_WORKFLOW_STATIC_CONTRACT=PASS`；`WINDOWS_CI=NOT_RUN_THIS_PREPARATION`；`WINDOWS_LOCAL_PRISTINE=TEST_GAP`；`PUBLIC_ASSET_PROVENANCE=UNVERIFIED`；`DOCS_CHECK_FINAL=PASS`；`STABLE_RELEASE_RECOMMENDATION=NO`；`PATCH_RELEASE_RECOMMENDATION=NOT_READY_EXTERNAL_GATES_REQUIRED`；`PATCH_RELEASE_PREPARATION=NOT_READY`。證據：`docs/project-management/evidence/2026-09-02-patch-preparation-0511.json`。
 - 獨立審查是否執行：是（round1、round2、round3、round4、round5、round6；round6 完成 final closeout 複審）
+- 獨立審查輪次：round6
 - round6 結論：有條件通過（local preparation closeout；external release gates 仍未完成）
 - 發布授權：不適用（本輪僅本機 preparation；不建立公開 tag／Release／assets；未使用 `AUTH-2026-07-23-01` 執行發布）
 - 審查檔案：`docs/project-management/reviews/2026-09-02-patch-preparation-round6.md`
