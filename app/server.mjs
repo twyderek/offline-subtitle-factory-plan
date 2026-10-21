@@ -609,6 +609,67 @@ function getAiCheckpointPath(job) {
   return path.join(job.jobRoot, 'ai-output', 'checkpoint.json');
 }
 
+function safeAiDiagnosticText(value, maxLength = 240) {
+  return String(value || '').replace(/[\r\n\t]+/g, ' ').slice(0, maxLength);
+}
+
+function nullableAiDiagnosticNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeAiDiagnostic(value = {}) {
+  const response = value.response || {};
+  const request = value.request || {};
+  const validation = value.validation || {};
+  return {
+    recordedAt: new Date().toISOString(),
+    phase: safeAiDiagnosticText(value.phase, 40),
+    batchIndex: Number.isFinite(Number(value.batchIndex)) ? Number(value.batchIndex) : 0,
+    provider: safeAiDiagnosticText(value.provider, 40),
+    model: safeAiDiagnosticText(value.model, 120),
+    request: {
+      mode: safeAiDiagnosticText(request.mode, 40),
+      language: safeAiDiagnosticText(request.language, 40),
+      cueCount: Number(request.cueCount) || 0,
+      responseFormat: safeAiDiagnosticText(request.responseFormat, 40),
+      structuredOutput: Boolean(request.structuredOutput),
+      maxCompletionTokens: Number(request.maxCompletionTokens) || 0,
+      maxBatchChars: Number(request.maxBatchChars) || 0,
+      messageCount: Number(request.messageCount) || 0,
+      systemMessageLength: Number(request.systemMessageLength) || 0,
+      userMessageLength: Number(request.userMessageLength) || 0,
+      hasGlossary: Boolean(request.hasGlossary),
+    },
+    response: response ? {
+      status: Number(response.status) || 0,
+      ok: Boolean(response.ok),
+      contentType: safeAiDiagnosticText(response.contentType, 120),
+      requestId: safeAiDiagnosticText(response.requestId, 120),
+      bodyLength: nullableAiDiagnosticNumber(response.bodyLength),
+      resultKind: safeAiDiagnosticText(response.resultKind, 40),
+      topLevelKeys: Array.isArray(response.topLevelKeys) ? response.topLevelKeys.slice(0, 32).map((item) => safeAiDiagnosticText(item, 80)) : [],
+      choiceKeys: Array.isArray(response.choiceKeys) ? response.choiceKeys.slice(0, 32).map((item) => safeAiDiagnosticText(item, 80)) : [],
+      messageKeys: Array.isArray(response.messageKeys) ? response.messageKeys.slice(0, 32).map((item) => safeAiDiagnosticText(item, 80)) : [],
+      finishReason: safeAiDiagnosticText(response.finishReason, 80),
+      contentKind: safeAiDiagnosticText(response.contentKind, 120),
+      contentLength: nullableAiDiagnosticNumber(response.contentLength),
+      parsedKind: safeAiDiagnosticText(response.parsedKind, 80),
+      outputKind: safeAiDiagnosticText(response.outputKind, 120),
+      outputTextLength: nullableAiDiagnosticNumber(response.outputTextLength),
+      toolCallCount: Number(response.toolCallCount) || 0,
+      hasRefusal: Boolean(response.hasRefusal),
+      hasError: Boolean(response.hasError),
+    } : null,
+    validation: {
+      ok: validation.ok !== false,
+      code: safeAiDiagnosticText(validation.code, 80),
+      message: safeAiDiagnosticText(validation.message, 240),
+    },
+  };
+}
+
 function publicAiRecord(record) {
   if (!record) return null;
   return {
@@ -619,6 +680,7 @@ function publicAiRecord(record) {
     progress: record.progress,
     result: record.result,
     error: record.error,
+    diagnostics: Array.isArray(record.diagnostics) ? record.diagnostics : [],
     retryable: Boolean(record.retryable),
     startedAt: record.startedAt,
     updatedAt: record.updatedAt,
@@ -745,6 +807,7 @@ function startAiOptimizationJob(job, payload, previous = null) {
     status: 'running',
     progress: previous?.progress || { completedBatches: 0, totalBatches: Math.ceil(request.cues.length / batchSize), processedCues: 0, totalCues: request.cues.length, totalRetries: 0 },
     checkpoint: previous?.checkpoint || { nextBatchIndex: 0, suggestions: [], totalRetries: 0 },
+    diagnostics: Array.isArray(previous?.diagnostics) ? [...previous.diagnostics] : [],
     request,
     provider: config.provider,
     model: config.model,
@@ -776,6 +839,10 @@ function startAiOptimizationJob(job, payload, previous = null) {
     onCheckpoint: async (checkpoint) => {
       record.checkpoint = checkpoint;
       record.progress = checkpoint.progress;
+      persistAiRecord(job, record);
+    },
+    onDiagnostic: async (diagnostic) => {
+      record.diagnostics = [...(record.diagnostics || []), normalizeAiDiagnostic(diagnostic)].slice(-50);
       persistAiRecord(job, record);
     },
   }).then((result) => {

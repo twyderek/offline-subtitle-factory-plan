@@ -11,11 +11,11 @@ if (-not $DistDir) {
   $DistDir = Resolve-Path (Join-Path $ProjectRoot '..\dist')
 }
 
-$setup = Get-ChildItem -LiteralPath $DistDir -Filter '*Setup *.exe' -File |
+$setup = Get-ChildItem -LiteralPath $DistDir -Filter '*setup*.exe' -File |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 $portable = Get-ChildItem -LiteralPath $DistDir -Filter '*.exe' -File |
-  Where-Object { $_.Name -notlike '*Setup*' } |
+  Where-Object { $_.Name -notlike '*setup*' } |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 

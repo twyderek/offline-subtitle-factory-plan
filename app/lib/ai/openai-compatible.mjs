@@ -66,6 +66,61 @@ async function readStreamingJson(response, armTimeout) {
   return mergeStreamingRecords(text);
 }
 
+function objectKeys(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.keys(value).slice(0, 32)
+    : [];
+}
+
+function valueKind(value) {
+  if (value === undefined) return 'missing';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) {
+    const types = [...new Set(value.slice(0, 16).map((item) => String(item?.type || typeof item)))];
+    return types.length ? `array:${types.join(',')}` : 'array:empty';
+  }
+  return typeof value;
+}
+
+function textLength(value) {
+  if (typeof value === 'string') return value.length;
+  if (!Array.isArray(value)) return null;
+  return value.reduce((total, item) => total + (typeof item?.text === 'string' ? item.text.length : 0), 0);
+}
+
+export function summarizeAiResponse(result, response, bodyLength = null) {
+  const choice = result?.choices?.[0];
+  const message = choice?.message;
+  return {
+    status: Number(response?.status || 0),
+    ok: Boolean(response?.ok),
+    contentType: String(response?.headers?.get?.('content-type') || ''),
+    requestId: String(response?.headers?.get?.('apim-request-id') || response?.headers?.get?.('x-request-id') || ''),
+    bodyLength: Number.isFinite(bodyLength) ? bodyLength : null,
+    resultKind: Array.isArray(result) ? 'array' : typeof result,
+    topLevelKeys: objectKeys(result),
+    choiceKeys: objectKeys(choice),
+    messageKeys: objectKeys(message),
+    finishReason: String(choice?.finish_reason || ''),
+    contentKind: valueKind(message?.content),
+    contentLength: textLength(message?.content),
+    parsedKind: valueKind(message?.parsed),
+    outputKind: valueKind(result?.output),
+    outputTextLength: typeof result?.output_text === 'string' ? result.output_text.length : null,
+    toolCallCount: Array.isArray(message?.tool_calls) ? message.tool_calls.length : 0,
+    hasRefusal: Boolean(message?.refusal || choice?.refusal || result?.refusal),
+    hasError: Boolean(result?.error),
+  };
+}
+
+function attachAiResponseDiagnostics(result, diagnostics) {
+  if (!result || typeof result !== 'object') return result;
+  try {
+    Object.defineProperty(result, '__aiDiagnostics', { value: diagnostics, enumerable: false, configurable: true });
+  } catch {}
+  return result;
+}
+
 export async function requestAiJson({ baseUrl, apiKey, pathname, method = 'GET', body, timeoutSeconds = 60, signal, headers = {}, authHeader = 'Authorization', authPrefix = 'Bearer ', streamResponse = false }) {
   const localEndpoint = isLoopbackAiUrl(baseUrl);
   if (!apiKey && !localEndpoint) throw new Error('尚未設定 AI API Key');
@@ -95,28 +150,37 @@ export async function requestAiJson({ baseUrl, apiKey, pathname, method = 'GET',
     // before emitting the first NDJSON record.  Treat the body wait as a new
     // idle window instead of charging it against the request/headers window.
     armTimeout();
-    const result = response.ok && streamResponse
-      ? await readStreamingJson(response, armTimeout)
-      : await response.text().then((text) => {
-        try { return text ? JSON.parse(text) : {}; } catch { return { raw: text.slice(0, 500) }; }
-      });
+    let bodyLength = null;
+    let result;
+    if (response.ok && streamResponse) {
+      result = await readStreamingJson(response, armTimeout);
+    } else {
+      const text = await response.text();
+      bodyLength = text.length;
+      try { result = text ? JSON.parse(text) : {}; } catch { result = { raw: null, rawLength: text.length, rawJson: false }; }
+    }
+    const diagnostics = summarizeAiResponse(result, response, bodyLength);
     if ([301, 302, 303, 307, 308].includes(response.status)) {
-      throw new AiProviderError('AI 服務重新導向已被安全政策拒絕', {
+      const error = new AiProviderError('AI 服務重新導向已被安全政策拒絕', {
         status: response.status,
         code: 'redirect_blocked',
         retryable: false,
       });
+      error.responseDiagnostics = diagnostics;
+      throw error;
     }
     if (!response.ok) {
       const detail = result?.error?.message || result?.message || result?.raw || `HTTP ${response.status}`;
-      throw new AiProviderError(`AI 服務回應失敗：${detail}`, {
+      const error = new AiProviderError(`AI 服務回應失敗：${detail}`, {
         status: response.status,
         code: String(result?.error?.code || ''),
         retryable: isRetryableStatus(response.status),
         retryAfterMs: parseRetryAfter(response.headers.get('retry-after')),
       });
+      error.responseDiagnostics = diagnostics;
+      throw error;
     }
-    return result;
+    return attachAiResponseDiagnostics(result, diagnostics);
   } catch (error) {
     if (error instanceof AiProviderError || signal?.aborted) throw error;
     const timedOut = timeoutController.signal.aborted;

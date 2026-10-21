@@ -31,6 +31,7 @@ assert.match(html, /<select id="qualityFilter">/);
 assert.match(html, /<option value="issues">全部問題<\/option>/);
 assert.match(html, /<option value="low-confidence">低可信<\/option>/);
 assert.match(html, /<option value="quality">只處理品質篩選結果<\/option>/);
+assert.match(html, /<option value="smart">智慧範圍：依問題類型處理<\/option>/);
 assert.match(js, /filterQualityCues\(state\.cues, state\.qualityFilter\)/);
 assert.doesNotMatch(js, /scope === 'quality'[\s\S]{0,500}(reviewVideo|reviewVideoFile|audio|video\.src)/);
 const scopeCues = [
@@ -40,6 +41,18 @@ const scopeCues = [
 const qualityPayload = selectAiCues({ cues: scopeCues, scope: 'quality', qualityFilter: 'low-confidence' });
 assert.deepEqual(qualityPayload.map((cue) => cue.id), [2], 'quality scope 應只送出篩選後 cue');
 assert.deepEqual(Object.keys(qualityPayload[0]).sort(), ['end', 'id', 'sourceText', 'start', 'text', 'translatedText'], 'AI payload 不得含 raw quality 或影音欄位');
+const smartProofreadPayload = selectAiCues({ cues: scopeCues, scope: 'smart', mode: 'proofread' });
+assert.deepEqual(smartProofreadPayload.map((cue) => cue.id), [2], '智慧校對範圍應只送出低可信字幕');
+const breakCues = [
+  { id: 10, start: 0, end: 1, startRaw: '00:00:00,000', endRaw: '00:00:01,000', text: '前一句' },
+  { id: 11, start: 0, end: 12, startRaw: '00:00:01,000', endRaw: '00:00:13,000', text: '這是一段需要提供前後文來協助模型改善斷句的長字幕內容。' },
+  { id: 12, start: 13, end: 14, startRaw: '00:00:13,000', endRaw: '00:00:14,000', text: '後一句' },
+];
+const smartBreakPayload = selectAiCues({ cues: breakCues, scope: 'smart', mode: 'breaks' });
+assert.deepEqual(smartBreakPayload.map((cue) => cue.id), [11], '智慧斷句範圍應只送出過長字幕');
+assert.deepEqual(smartBreakPayload[0].context, { previous: { id: 10, text: '前一句' }, next: { id: 12, text: '後一句' } }, '斷句模式應附帶鄰近字幕上下文');
+const searchPayload = selectAiCues({ cues: [{ id: 20, sourceText: 'Source term', translatedText: '既有譯文', text: '既有譯文' }], scope: 'search', search: 'source term' });
+assert.deepEqual(searchPayload.map((cue) => cue.id), [20], '搜尋範圍應同時搜尋原文與譯文');
 const translationPayload = selectAiCues({ cues: [{ ...scopeCues[1], sourceText: 'Source sentence', translatedText: '既有譯文' }], scope: 'selected', selectedCueIds: new Set(['2']), mode: 'translate' });
 assert.equal(translationPayload[0].text, 'Source sentence', '翻譯模式應以原文作為輸入');
 assert.match(js, /source-text/);

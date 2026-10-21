@@ -76,7 +76,7 @@ const legacyAiStorageMigration = migrateLegacyAiLocalStorage(localStorage);
 document.getElementById('reviewVideoFile').addEventListener('change', handleVideoFile);
 document.getElementById('reviewSrtFile').addEventListener('change', handleSrtFile);
 document.getElementById('reviewRuleFile').addEventListener('change', handleRuleFile);
-document.getElementById('qualityFilter').addEventListener('change', (event) => { state.qualityFilter = event.target.value; renderCueList(); updateStats(); });
+document.getElementById('qualityFilter').addEventListener('change', (event) => { state.qualityFilter = event.target.value; renderCueList(); updateStats(); updateAiScopeEstimate(); });
 document.getElementById('loadProjectPreset').addEventListener('click', loadProjectPreset);
 document.getElementById('openTrim').addEventListener('click', () => {
   location.href = appUrl(`/trim/${encodeURIComponent(jobId)}`);
@@ -104,6 +104,7 @@ document.getElementById('aiPromptMode').addEventListener('change', (event) => {
   const mode = event.target.value || 'proofread';
   document.querySelectorAll('.ai-mode').forEach((item) => item.classList.toggle('active', item.dataset.aiMode === mode));
   showAiPromptTemplate();
+  updateAiScopeEstimate();
 });
 document.getElementById('aiProvider').addEventListener('change', loadAiProviderProfile);
 document.getElementById('aiBaseUrl').addEventListener('input', updateAiPrivacyStatus);
@@ -118,6 +119,7 @@ document.querySelectorAll('.ai-mode').forEach((button) => button.addEventListene
   document.querySelectorAll('.ai-mode').forEach((item) => item.classList.toggle('active', item === button));
   document.getElementById('aiPromptMode').value = button.dataset.aiMode || 'proofread';
   showAiPromptTemplate();
+  updateAiScopeEstimate();
 }));
 document.getElementById('downloadSrt').addEventListener('click', downloadSrt);
 document.getElementById('downloadVtt').addEventListener('click', downloadVtt);
@@ -626,7 +628,12 @@ function updateAiScopeEstimate() {
 async function runAiOptimize() {
   const cues = aiRequestCues();
   if (!cues.length) {
-    statusMessage(document.getElementById('aiScope').value === 'selected' ? '請先選取一段字幕' : '沒有可優化的字幕');
+    const scope = document.getElementById('aiScope').value;
+    statusMessage(scope === 'selected'
+      ? '請先選取一段字幕'
+      : scope === 'smart'
+        ? '目前優化模式沒有符合的品質問題，請調整篩選條件或改選全部字幕'
+        : '沒有可優化的字幕');
     return;
   }
   setAiToolbarCollapsed(false);
