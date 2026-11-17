@@ -1,5 +1,31 @@
 # 改版與工作紀錄
 
+## 2026-11-17 — NVIDIA NIM provider 整合、驗證與 Windows unsigned build
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：需求方要求依附加 `CODEX_EXECUTION_PLAN.md` 執行 NVIDIA Provider 整合後的本地驗證、自動化測試、Electron Windows x64 無簽章打包與發布準備。
+- 關聯需求／缺陷：新增 `FR-028`（NVIDIA NIM OpenAI-compatible provider）；沿用 `NFR-001`、`NFR-002`、`NFR-005`、`NFR-006`、`NFR-008`。
+- 變更等級：開發／測試／封裝準備；不等同對外發布。
+- 執行前已讀：`npm run project:preflight -- --type=full`、`AGENTS.md`、專案管理固定核心及 full route 文件；已核對附加規劃與目前工作樹實況。規劃宣稱 NVIDIA 已完成，但目前 checkout 的 `lib/ai/providers.mjs`、`public/review.html` 與測試尚無 NVIDIA；目前版本為 root `0.52.0`，分支為 `codex/ai-workflow-optimization`，另有既有未提交變更，均予保留。
+- 目標與成功條件：新增 `nvidia` provider registry／預設 Base URL／OpenAI-compatible adapter、設定頁選項與模型建議、provider contract／UI／核心 API 測試；執行語法檢查、focused tests、完整 `npm test`／`npm run check`；若 runtime gate 通過則建立 Windows x64 unsigned installer／portable assets，並核對版本、檔案、SHA-256 與簽章狀態。
+- 不在範圍：不讀取或提交 NVIDIA API Key、不建立 GitHub tag／Release、不上傳資產、不修改使用者既有 `app/` 工作樹變更、不宣稱未完成的 macOS build、真實字幕品質、完整安裝後 UI 或發布驗收已通過。
+- 可執行計畫：1. 先補 NVIDIA provider 與 UI／測試契約；2. 同步需求／設計／支援文件；3. 執行 focused 與完整測試，區分既有失敗與本輪回歸；4. 執行 Windows unsigned build（若 runtime 檔案與環境允許），保存 build manifest／checksum／簽章檢查；5. 啟動獨立只讀審查代理建立 round1 報告；6. 依審查結果修正並重跑受影響驗證，最後完成文件結案與 `npm run docs:check:final`。
+- 預計影響檔案／模組：`lib/ai/providers.mjs`、`public/review.html`、`public/review.js`、`scripts/test-ai-providers.mjs`、`scripts/test-review-ui.mjs`、`scripts/test-core.mjs`（若 API 覆蓋需要）、`docs/project-management/02-REQUIREMENTS-ANALYSIS.md`、`03-FUNCTIONAL-DESIGN.md`、`05-DEVELOPMENT-AND-DEPLOYMENT.md`、`06-TEST-AND-PROCESS-AUDIT.md`、相關 AI 支援文件與本條目；新增本輪獨立審查報告。
+- 風險與回復方式：NVIDIA NIM 模型的 JSON／schema 能力可能依模型不同；adapter 先遵循既有 OpenAI-compatible 清理與 response contract，不能以模型列表成功代替優化品質驗收。若完整測試、runtime manifest、封裝或審查失敗，保留證據、停止發布操作，僅修正本輪範圍。API Key 只可由環境／使用者受控流程提供，禁止寫入檔案、log、測試輸出或 git。
+- 實際修改：已在 `lib/ai/providers.mjs` 註冊 NVIDIA NIM capability／預設 endpoint／共用 OpenAI-compatible adapter；在 `public/review.html`、`public/review.js` 加入 provider option、合法 ID 與預設 URL；在 `scripts/test-ai-providers.mjs`、`scripts/test-review-ui.mjs`、`scripts/test-core.mjs`、`scripts/verify-electron-renderer.mjs` 補齊 contract／UI／profile／packaged provider-ID assertions；同步 `02`／`03`／`04`／`05`／`06`／`00` 文件與非敏感 live evidence。為避開 root 內 stale `app/` subtree 被 electron-builder 誤選，`package.json` build directories 明確設定 `app="."`；未修改 `app/` 既有使用者變更。
+- 開發驗證結果：`node --check`（provider、renderer、相關測試）通過；`node scripts/test-ai-providers.mjs`、`node scripts/test-review-ui.mjs`、隔離 PATH 下 `node scripts/test-core.mjs` 通過；`npm audit --omit=dev` 回報 0 vulnerabilities；scoped `git diff --check` 通過。完整隔離 PATH `npm test` 已完成 provider／UI／core 等前置 suites，但在 `scripts/test-youtube.mjs` 的 Windows `fs.symlinkSync` 以 `EPERM` 結束，未繞過權限，因此完整回歸標記為環境阻塞；root 沒有 `typecheck` script，故不適用。NVIDIA live evidence 通過：指定模型可用、模型列表 32 筆、單 cue JSON contract pass，API key 未保存於 evidence。
+- Windows unsigned build：`npm run electron:build:unsigned` exit 0；setup `252,617,424` bytes、portable `251,910,055` bytes；兩者 NanaZip `7z t` 均 `Everything is Ok`，`latest.yml` size／SHA-512 matched，runtime manifest 五項 hashes matched，Authenticode 均為 `NotSigned`。Packaged renderer smoke exit 0：homepage／Electron API／safe-key UI、upload completed／cleaned SRT、AI review provider IDs（含 `nvidia`）均通過。完整安裝後人工流程、跨模型品質、macOS build、正式簽章／公證與公開 Release 未宣稱。
+- `npm run docs:check:final`：本輪 closeout 執行通過（最新條目已完成且含可解析獨立報告與逐字結論）；`git diff --check` 全工作樹仍會命中既有 `app/` 使用者變更的 CRLF／trailing-whitespace，未修改該區域。
+- 獨立審查是否執行：是；由獨立上下文建立 `docs/project-management/reviews/2026-11-17-fr-028-nvidia-nim-provider-round1.md`，除該報告外未修改其他檔案。
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-17-fr-028-nvidia-nim-provider-round1.md`
+  - 判定（逐字引用報告「結論」）：**有條件通過。在 FR-028「provider integration development verification」範圍內，現有實作與可取得證據相互一致，沒有需要立即阻擋 NVIDIA provider 的 P0／P1 runtime code defect；可維持本地開發／測試候選狀態。** 條件為完整 `npm test` 維持 Windows symlink `EPERM` 的環境阻塞揭露，且不得將未測試的 NVIDIA 負向／跨模型品質、安裝後人工流程、正式簽章／公證或公開 Release 宣稱為通過。
+  - 條件是否已被需求方接受：是（本輪需求範圍限於本地開發驗證與 unsigned build 準備；未宣稱完整外部驗收或公開發布）。
+- 發布授權：本輪僅執行本地開發／測試／unsigned build 準備，不建立或上傳公開 Release；若後續要求發布，須另依 `workflows/06-BUILD-RELEASE.md` 核對本次授權或 `AUTH-2026-07-23-01`，並完成來源 SHA、版本、資產、checksum、簽章狀態與下載核對。
+- 部署／發布結果：尚未發布。
+- 遺留風險與後續事項：NVIDIA 錯誤／過期 key、斷網、timeout、取消、長批次、32 模型逐一 JSON 能力、跨模型品質與專屬 clear-key 尚未逐項驗證；完整 `npm test` 仍受 Windows symlink 權限阻塞。Windows setup 安裝／解除安裝後人工流程、乾淨帳號、macOS build、正式簽章／公證與任何公開 Release 均未執行。若要宣稱完整外部 provider acceptance，需在具備 symlink 權限的環境補跑回歸並另行取得上述範圍證據。
+
 ## 2026-10-20 — FR-027 v0.52.0 round15 發布狀態同步與 final-source 複審
 
 - 狀態：進行中

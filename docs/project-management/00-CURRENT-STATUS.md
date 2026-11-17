@@ -8,6 +8,12 @@
 > 發布 tag／commit：`v0.51.0` → `53956ccdee6e16e4c0413f09312a419613b27da6`
 > 主分支：`main`
 
+## 2026-11-17 FR-028 NVIDIA NIM provider 開發驗證
+
+本輪依附加規劃在 root `0.52.0` checkout 完成 NVIDIA NIM OpenAI-compatible provider、設定頁選項、provider contract 測試與 Windows x64 unsigned build 準備；`app/` 子目錄既有使用者變更保持不動。NVIDIA live probe 使用受控環境變數中的 API key，未保存或輸出 key；`docs/project-management/evidence/2026-11-17-fr-028-nvidia-live.json` 記錄模型列表 32 筆、指定模型可用與 JSON cue contract pass。這是開發驗證，不代表公開發布或字幕品質驗收。
+
+Focused provider／UI／core 測試、語法檢查、核心測試（隔離 PATH 以避免全域 Python Whisper 改變 mock 分支）與 `docs:check:final` 均通過。完整 `npm test` 已執行至既有 YouTube symlink fixture，因 Windows `fs.symlinkSync` EPERM 結束；此前測試均通過，該環境阻塞未被繞過。Electron unsigned build、setup／portable archive integrity、版本／metadata／runtime manifest／SHA-256／SHA-512、`NotSigned` 狀態與 packaged renderer smoke 均通過；完整安裝後人工流程、跨模型真實優化品質、macOS build、公開 Release 未驗收／未執行。
+
 ## 2026-10-20 0.52.0 發布狀態
 
 round9／round10 指出的 source archive 個人路徑與 smoke provenance 問題已依範圍處理；round14 發現的額外 Windows user-profile 路徑已在 source `b2b942eb6d941e61f1a5a27e065e51dd8c31e26f` 以中性佔位符取代。需求方於 2026-10-20 明確核准 round12 reviewer 報告原樣公開，知情接受該原件含一處本機絕對候選路徑；README／Release notes 持續揭露這項唯一限縮例外。round15 對 b2b942e 的 source check、macOS arm64 candidate、exact-source Windows run `39380574427`／artifact `12244799752` 與 73/73 shared-file hashes 判定各技術 gate 於聲明範圍通過，但整體 BLOCK，因 `00`／`05`／`06`／`08` 尚未同步實際結果；具體狀態、摘要與修正計畫見最新 08 條目及 round15 原報告。現在正同步受控文件，形成的新 source SHA 必須重跑完整 check、macOS candidate、exact-source Windows CI／hash gate 並取得 round16 無發布阻擋後才可發布。`docs:check:final` 依 workflows 06／07 於正式發布及資產核對後執行。候選 smoke 不代表有效播放／完整轉錄；Windows artifact 僅抽取 ZIP byte range、完整 archive 未下載，且 Windows preview 不屬本次公開資產。此刻尚無 v0.52.0 tag／Release／資產，GitHub Latest 仍為 0.51.0。

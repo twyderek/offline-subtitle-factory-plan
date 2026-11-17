@@ -377,6 +377,7 @@ try {
   const loadedAiSettings = await aiSettingsGetResponse.json();
   assert.equal(loadedAiSettings.settings.apiKey, undefined, '讀取 AI 設定不可回傳 API Key 欄位');
   assert.ok(loadedAiSettings.settings.providers.some((item) => item.id === 'anthropic'), 'AI 設定 API 應列出 Anthropic provider');
+  assert.ok(loadedAiSettings.settings.providers.some((item) => item.id === 'nvidia'), 'AI 設定 API 應列出 NVIDIA NIM provider');
   assert.equal(fs.readFileSync(path.join(dataDir, 'config', 'settings.json'), 'utf8').includes('test-secret-must-not-leak'), false, '一般設定檔不可包含 API Key');
 
   const nestedProfileSecret = 'nested-profile-secret-must-not-leak';
@@ -542,6 +543,26 @@ try {
   const groqProfile = await (await api('/api/ai/profile?provider=groq')).json();
   assert.equal(groqProfile.profile.model, 'llama-3.3-70b-versatile', 'Groq profile 應依供應商隔離保存');
   assert.equal(groqProfile.hasApiKey, true, 'Groq profile 應回報已有專屬金鑰');
+
+  const nvidiaSettingsResponse = await api('/api/ai/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...loadedAiSettings.settings,
+      provider: 'nvidia',
+      baseUrl: 'https://integrate.api.nvidia.com/v1',
+      model: 'nvidia/nemotron-3-ultra-550b-a55b',
+      apiKey: 'nvidia-secret-must-not-leak',
+    }),
+  });
+  assert.equal(nvidiaSettingsResponse.status, 200, 'NVIDIA NIM 設定應可保存');
+  const savedNvidiaSettings = await nvidiaSettingsResponse.json();
+  assert.equal(savedNvidiaSettings.settings.provider, 'nvidia', 'NVIDIA NIM 不可被無聲回退');
+  assert.equal(savedNvidiaSettings.settings.baseUrl, 'https://integrate.api.nvidia.com/v1', 'NVIDIA NIM 應保存預設 Base URL');
+  assert.equal(JSON.stringify(savedNvidiaSettings).includes('nvidia-secret-must-not-leak'), false, 'NVIDIA API Key 不可出現在回應');
+  const nvidiaProfile = await (await api('/api/ai/profile?provider=nvidia')).json();
+  assert.equal(nvidiaProfile.profile.model, 'nvidia/nemotron-3-ultra-550b-a55b', 'NVIDIA NIM profile 應依供應商隔離保存');
+  assert.equal(nvidiaProfile.hasApiKey, true, 'NVIDIA NIM profile 應回報已有專屬金鑰');
 
   const geminiRuntimeKeyResponse = await api('/api/ai/runtime-key', {
     method: 'POST',

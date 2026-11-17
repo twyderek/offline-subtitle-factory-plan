@@ -1,5 +1,15 @@
 # 功能測試與流程稽核
 
+## 2026-11-17 FR-028 NVIDIA NIM provider 開發驗證
+
+- **需求／範圍**：root `0.52.0` checkout 新增 NVIDIA NIM OpenAI-compatible provider、設定頁選項與測試契約；`app/` 子目錄原有使用者變更不在本輪範圍，未修改。未建立 tag／Release、未上傳資產，也未把本輪結果宣稱為 macOS、真實字幕品質或完整安裝後人工驗收。
+- **focused 通過**：`node --check lib/ai/providers.mjs`、`node --check public/review.js`、`node scripts/test-ai-providers.mjs`、`node scripts/test-review-ui.mjs`、`node scripts/test-core.mjs`（使用隔離 PATH，避免全域 Python Whisper 改變 core fixture 分支）均 exit 0；provider contract 覆蓋 default URL、`/models`、Bearer header、`/chat/completions`、請求清理與 JSON cue response。`npm run docs:check:final` exit 0。
+- **live provider**：`node scripts/probe-provider-live.mjs` 使用既存環境變數中的 NVIDIA API key，未讀取、輸出或保存 key；`docs/project-management/evidence/2026-11-17-fr-028-nvidia-live.json` 記錄 base URL、模型 `nvidia/nemotron-3-ultra-550b-a55b`、`modelAvailable=true`、`modelCount=32` 與 JSON cue contract pass。這證明本次 key／endpoint／模型列表／單次優化請求可用，不證明跨模型品質或長批次穩定性。
+- **完整回歸邊界**：隔離 PATH 下 `npm test` 已執行至 `scripts/test-youtube.mjs`；先前 suites 均通過，最後因 Windows `fs.symlinkSync` EPERM 結束，未繞過權限限制。這是環境阻塞，不能記為完整回歸通過。`npm run typecheck` 不適用：root `package.json` 沒有此 script。
+- **Windows unsigned build**：`npm run electron:build:unsigned` exit 0；setup／portable installer 均由 NanaZip `7z t` exit 0，metadata version／size／SHA-512 matched，runtime manifest 的 ffmpeg、ffprobe、whisper、DLL、model 與 tiny model hashes matched；Authenticode 為 `NotSigned`（符合 unsigned scope）。由於 root 內含 stale `app/` subtree，補上 root build `directories.app="."` 以固定 electron-builder application root，未修改 `app/`。
+- **packaged renderer smoke**：`scripts/verify-electron-renderer.mjs` 對 `dist/win-unpacked/離線字幕工廠.exe` 通過 homepage／Electron API／safe-key UI、upload flow（completed／cleaned SRT）及 AI review asset provider IDs（含 `nvidia`）。這是 packaged smoke，不是完整安裝後一般使用者驗收。
+- **未測試／剩餘風險**：NVIDIA 無 key、錯誤 key、網路中斷、長批次取消、跨 32 模型逐一 JSON 能力與人工字幕品質未逐項驗證；Windows 安裝後人工流程、macOS build、正式簽章／公證與公開 Release 未執行。build artifacts 位於 repo 外的 `dist`，本輪只作本地核對，不代表已發布。
+
 ## 2026-10-20 FR-027 v0.52.0 round15 BLOCK：治理狀態與已完成證據不一致
 
 - round15 審查對象 source `b2b942eb6d941e61f1a5a27e065e51dd8c31e26f`。round14 的個人 Windows user-profile blocker 已修正；round15 確認 source、macOS arm64 candidate、exact-source Windows CI/hash gate 於其聲明範圍通過，但因 `00`／`05`／`06`／`08` 仍標示上述修正及 b2b942e 驗證待完成而判 BLOCK。獨立報告：`docs/project-management/reviews/2026-10-20-fr-027-v0520-github-publication-round15.md`，其餘六面向證據與 P1 請查原報告。

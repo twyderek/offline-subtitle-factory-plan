@@ -40,6 +40,7 @@
 | FR-024 | Breeze ASR 25 實驗性本機轉錄 | 可選用 MediaTek Research Breeze ASR 25 處理台灣華語與中英混用字幕；只從固定官方 revision 下載 3,087,008,569 bytes checkpoint 並驗證 SHA-256；執行前必須確認外部 Python runtime 的 `whisper.available_models()` 真正包含 `breeze-asr-25`，缺少 runtime 或有效模型時不得啟動或假成功；沿用既有音訊前處理、SRT 時間碼清理、取消與人工校閱流程；Whisper.cpp 維持預設且本輪不宣稱已隨安裝包提供 Breeze runtime |
 | FR-025 | Breeze 效能透明化與首次選擇提醒 | `/api/breeze-asr` 提供固定、可追溯且標示單機觀察範圍的效能參考；選擇 Breeze 後在產品名稱外顯示低資源裝置可能較慢、MacBook Air 參考值與 Whisper.cpp 回退建議；不把參考值宣稱為跨機型保證或真實模型驗收 |
 | FR-026 | Anthropic Claude provider | 設定介面可選 Anthropic；後端使用 Messages API `/v1/messages` 與 `/v1/models`，`x-api-key`、`anthropic-version` 與 `max_tokens` 契約正確；Models API 必須依 `has_more`／`last_id`／`after_id` 讀完分頁，後頁指定模型不可誤判為不可用，異常或無法前進的游標須明確失敗；system／user／assistant 訊息與回應正規化為既有 optimizer contract；profile／runtime key 隔離，內部 cue metadata 不外送；不得將共用 optimizer 的 `temperature`／`top_p`／`top_k` 傳給 Anthropic，以相容會拒絕非預設取樣參數的新模型；非法 provider 仍明確拒絕 |
+| FR-028 | NVIDIA NIM provider | 設定介面可選 NVIDIA NIM 並自動帶入 `https://integrate.api.nvidia.com/v1`；後端使用 OpenAI-compatible `/models` 與 `/chat/completions` 契約，支援模型載入、連線測試與字幕優化；NVIDIA API Key 依既有 provider ID 隔離且不得回傳／寫入一般設定；模型清單成功不等同字幕品質或跨模型 JSON 能力驗收 |
 
 ### FR-027 YouTube 私人上傳 MVP（2026-10-16）
 

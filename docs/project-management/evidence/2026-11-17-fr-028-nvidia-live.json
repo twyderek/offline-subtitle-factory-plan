@@ -1,0 +1,28 @@
+{
+  "schema": "offline-subtitle-factory.provider-live-acceptance.v1",
+  "startedAt": "2026-11-17T06:59:09.554Z",
+  "completedAt": "2026-11-17T06:59:16.864Z",
+  "elapsedMs": 7309,
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "node": "v24.13.0"
+  },
+  "provider": "nvidia",
+  "baseUrl": "https://integrate.api.nvidia.com/v1",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "deployment": null,
+  "apiVersion": null,
+  "status": "pass",
+  "test": {
+    "ok": true,
+    "modelAvailable": true,
+    "modelCount": 32
+  },
+  "optimize": {
+    "responsePresent": true,
+    "contentLength": 116,
+    "contentIsJson": true,
+    "cueContract": "LIVE-1/one-cue/id-text-reason"
+  }
+}

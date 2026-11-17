@@ -53,6 +53,7 @@
     "appId": "com.offline-subtitle-factory.app",
     "productName": "離線字幕工廠",
     "directories": {
+      "app": ".",
       "output": "../dist"
     },
     "asar": false,

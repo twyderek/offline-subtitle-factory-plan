@@ -45,7 +45,7 @@ globalThis.fetch = providerMockFetch;
 
 try {
   const definitions = listProviderDefinitions();
-  assert.deepEqual(definitions.map((item) => item.id).sort(), ['anthropic', 'azure', 'gemini', 'groq', 'lm-studio', 'ollama', 'openai', 'openai-compatible']);
+  assert.deepEqual(definitions.map((item) => item.id).sort(), ['anthropic', 'azure', 'gemini', 'groq', 'lm-studio', 'nvidia', 'ollama', 'openai', 'openai-compatible']);
 
   for (const provider of ['openai', 'openai-compatible', 'groq']) {
     const adapter = createProvider({ provider, baseUrl: 'https://example.test/v1', apiKey: `key-${provider}`, model: 'test-model' });
@@ -101,6 +101,30 @@ try {
   const groqRequest = requests.at(-1);
   assert.match(groqRequest.url, /\/models$/);
   assert.equal(groqRequest.options.headers.Authorization, 'Bearer groq-key');
+
+  const nvidia = createProvider({ provider: 'nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKey: 'nvidia-key', model: 'nvidia/nemotron-3-ultra-550b-a55b' });
+  assert.equal((await nvidia.test()).ok, true);
+  const nvidiaTestRequest = requests.at(-1);
+  assert.match(nvidiaTestRequest.url, /integrate\.api\.nvidia\.com\/v1\/models$/);
+  assert.equal(nvidiaTestRequest.options.headers.Authorization, 'Bearer nvidia-key');
+  await nvidia.optimize({
+    model: 'nvidia/nemotron-3-ultra-550b-a55b',
+    operation: 'proofread',
+    output_language: 'zh-TW',
+    subtitle_cue_count: 1,
+    subtitle_cue_ids: ['N1'],
+    messages: [{ role: 'user', content: '[{"id":"N1","text":"測試"}]' }],
+  });
+  const nvidiaOptimizeRequest = requests.at(-1);
+  assert.match(nvidiaOptimizeRequest.url, /integrate\.api\.nvidia\.com\/v1\/chat\/completions$/);
+  assert.equal(nvidiaOptimizeRequest.options.headers.Authorization, 'Bearer nvidia-key');
+  const nvidiaBody = JSON.parse(nvidiaOptimizeRequest.options.body);
+  assert.equal(nvidiaBody.model, 'nvidia/nemotron-3-ultra-550b-a55b');
+  assert.equal(nvidiaBody.operation, undefined);
+  assert.equal(nvidiaBody.output_language, undefined);
+  assert.equal(nvidiaBody.subtitle_cue_count, undefined);
+  assert.equal(nvidiaBody.subtitle_cue_ids, undefined);
+  assert.ok(Array.isArray(nvidiaBody.messages));
 
   for (const [provider, baseUrl] of [['ollama', 'http://127.0.0.1:11434/v1'], ['lm-studio', 'http://localhost:1234/v1']]) {
     const local = createProvider({ provider, baseUrl, apiKey: '', model: 'test-model' });

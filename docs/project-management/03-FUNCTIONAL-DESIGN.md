@@ -1,5 +1,11 @@
 # 專案功能設計
 
+## 2026-11-17 FR-028 NVIDIA NIM provider
+
+NVIDIA NIM 使用獨立 provider ID `nvidia`，預設 Base URL 為 `https://integrate.api.nvidia.com/v1`，沿用既有 OpenAI-compatible transport 的 `/models` 與 `/chat/completions` 路徑、Bearer API Key、逾時／取消／錯誤分類與 optimizer response contract。NVIDIA provider 不被分類為 loopback；設定頁選項只提供預設端點與模型載入入口，實際可用模型由 NVIDIA `/models` 回應決定。
+
+因 NIM 的結構化輸出能力可能依模型而異，provider capability 預設不強制 `response_format`；字幕 optimizer 仍要求 JSON cues、保護 cue ID／數量／順序／時間碼，並由既有 strict parser／repair 邏輯判定回應是否可接受。模型清單、連線測試與 deterministic adapter contract 不代表真實模型品質、計費、rate-limit 或跨模型能力驗收。API Key 維持既有安全金鑰／runtime provider namespace 隔離，不進一般設定、renderer 回應、日誌或測試 artifact。
+
 ## 2026-10-19 BUG-049 校閱短／窄視窗
 
 保留側欄＋左影片／右字幕的布局。workspace採扣除gap後的可收縮fr欄，1280以下改46／54比例並讓播放／字幕工具列換行，避免子欄min-content撐出viewport。主grid固定viewport高度、row minmax(0,1fr)；側欄、viewer與右stage各自允許垂直捲動。viewer以max-content rows保留影片／按鈕的真實高度，不壓縮track造成影片覆蓋播放鍵；右stage保留至少180px字幕區並容許展開AI內容向下捲動。焦點及scrollIntoView不得捲走頁面header。所有變更局限review selectors，不改資料、轉錄或發布流程。
@@ -51,7 +57,7 @@ publisher persist 不建立缺失的 job root；只在 config/youtube-publish-hi
 | 修剪 | `public/trim.*`、`lib/media-edit.mjs` | In/Out、有效媒體、非破壞輸出與時間重算 |
 | 校閱 | `public/review.*`、`public/bilingual-subtitles.mjs` | 播放同步、原文／譯文個別編輯、時間編輯、狀態、排列預覽、樣式與輸出 |
 | 字幕時間軸 | `lib/subtitle-timeline.mjs` | cue 時間計算與邊界處理 |
-| AI provider | `lib/ai/providers.mjs`、`openai-compatible.mjs`、`anthropic.mjs`、`local-ai.mjs` | 供應商差異、loopback 安全分類、本機服務探測、HTTP、逾時、取消與錯誤正規化 |
+| AI provider | `lib/ai/providers.mjs`、`openai-compatible.mjs`、`anthropic.mjs`、`local-ai.mjs` | 供應商差異、NVIDIA NIM／其他 OpenAI-compatible adapter、loopback 安全分類、本機服務探測、HTTP、逾時、取消與錯誤正規化 |
 | AI optimizer | `lib/ai/subtitle-optimizer.mjs` | Prompt、批次、回應驗證、建議、重試、checkpoint |
 | AI languages | `lib/ai/languages.mjs` | BCP 47 驗證、標準化、常用語言名稱與不可注入的 Prompt 指令 |
 | AI settings migration | `server.mjs`、`scripts/test-core.mjs` | 載入設定時檢查 provider 與 Base URL／model 一致性；只遷移可辨識的 legacy Gemini／OpenAI-compatible 混用值 |
@@ -134,7 +140,7 @@ offline wrapper argv redaction boundary：offline evidence schema v5 在 `runner
 
 使用者啟用與設定 → 測試連線 → 選擇範圍／模式 → 分批傳送字幕文字 → 驗證 cue ID、數量、順序與內容 → 顯示建議 → 使用者接受／略過 → 自動保存。AI 不可修改時間碼或直接覆寫原字幕。
 
-供應商 ID 由後端 provider registry 統一驗證，支援 `openai`、`openai-compatible`、`azure`、`groq`、`gemini`、`anthropic`、`ollama`、`lm-studio`；新 API 輸入非法 ID 會回覆 400，不得無聲回退。各供應商的 profile、runtime key 與磁碟 secret 以 ID 隔離；profile 只保存 `baseUrl`、`model`、`deployment`、`apiVersion`、`batchSize` 與 `timeoutSeconds` allowlist 欄位，巢狀 API Key、Authorization、token、secret 或未知欄位不得寫入一般設定。既有 `settings.json` 載入時，AI 根層的 legacy secret-shaped 欄位與 profile 非 allowlist／未知 provider 會以同目錄暫存檔原子置換清除；合法 profile、非敏感未知 AI 根層欄位與獨立 secrets 保留，歷史明文不會自動匯入 secrets。若一般設定檔無法寫入，runtime 仍只使用正規化後資料並輸出不含秘密值的權限警告。Groq 使用 OpenAI 相容的 models／chat completions 路徑；Gemini 原生 models API 使用 `x-goog-api-key`，優化則依官方 OpenAI 相容介面使用 Bearer 認證與 chat completions 路徑。Anthropic 使用 `/v1/models` 與 `/v1/messages`，以 `x-api-key` 及固定 `anthropic-version` 標頭認證；連線測試只讀 `/v1/models`，避免為驗證產生模型輸出，並依清單回報指定模型是否存在，空清單或缺少指定 ID 均回報不可用。Models API 每頁要求官方最大合法 `limit=1000`；`has_more=true` 時以 opaque `last_id` 作下一頁 `after_id` 並保留順序，缺失／重複游標或超過 100 頁時明確失敗，避免回傳不完整清單或無限請求。正式 optimizer 的 system message 移到 Anthropic `system` 欄位，連續 user／assistant 訊息合併，`max_completion_tokens` 映射為必要的 `max_tokens`，移除 OpenAI 專用 `response_format`、內部 cue metadata，以及共用 optimizer 可能附帶的 `temperature`／`top_p`／`top_k`；後三者依 Anthropic 最新相容性要求由 prompt 與 cue contract 取代，不依模型 ID 分支，避免新模型收到非預設值時回覆 HTTP 400。回應再正規化為 `choices[].message.content`。非 Azure 供應商的 Deployment 與 API Version 欄位必須清空並停用。
+供應商 ID 由後端 provider registry 統一驗證，支援 `openai`、`openai-compatible`、`azure`、`groq`、`nvidia`、`gemini`、`anthropic`、`ollama`、`lm-studio`；新 API 輸入非法 ID 會回覆 400，不得無聲回退。各供應商的 profile、runtime key 與磁碟 secret 以 ID 隔離；profile 只保存 `baseUrl`、`model`、`deployment`、`apiVersion`、`batchSize` 與 `timeoutSeconds` allowlist 欄位，巢狀 API Key、Authorization、token、secret 或未知欄位不得寫入一般設定。既有 `settings.json` 載入時，AI 根層的 legacy secret-shaped 欄位與 profile 非 allowlist／未知 provider 會以同目錄暫存檔原子置換清除；合法 profile、非敏感未知 AI 根層欄位與獨立 secrets 保留，歷史明文不會自動匯入 secrets。若一般設定檔無法寫入，runtime 仍只使用正規化後資料並輸出不含秘密值的權限警告。Groq 與 NVIDIA NIM 使用 OpenAI 相容的 models／chat completions 路徑；NVIDIA NIM 預設為 `https://integrate.api.nvidia.com/v1`，不分類為 loopback，且不由 provider registry 強制 `response_format`。Gemini 原生 models API 使用 `x-goog-api-key`，優化則依官方 OpenAI 相容介面使用 Bearer 認證與 chat completions 路徑。Anthropic 使用 `/v1/models` 與 `/v1/messages`，以 `x-api-key` 及固定 `anthropic-version` 標頭認證；連線測試只讀 `/v1/models`，避免為驗證產生模型輸出，並依清單回報指定模型是否存在，空清單或缺少指定 ID 均回報不可用。Models API 每頁要求官方最大合法 `limit=1000`；`has_more=true` 時以 opaque `last_id` 作下一頁 `after_id` 並保留順序，缺失／重複游標或超過 100 頁時明確失敗，避免回傳不完整清單或無限請求。正式 optimizer 的 system message 移到 Anthropic `system` 欄位，連續 user／assistant 訊息合併，`max_completion_tokens` 映射為必要的 `max_tokens`，移除 OpenAI 專用 `response_format`、內部 cue metadata，以及共用 optimizer 可能附帶的 `temperature`／`top_p`／`top_k`；後三者依 Anthropic 最新相容性要求由 prompt 與 cue contract 取代，不依模型 ID 分支，避免新模型收到非預設值時回覆 HTTP 400。回應再正規化為 `choices[].message.content`。非 Azure 供應商的 Deployment 與 API Version 欄位必須清空並停用。
 
 Azure OpenAI 使用 deployment URL、`api-version` query 與 `api-key` header；送出 chat completion 前移除 optimizer 內部的 `operation`、`output_language`、cue count／ID 與 model 欄位，避免將內部控制資料當成 Azure 請求 schema。模型能力探測使用 `max_completion_tokens`，不使用舊的 `max_tokens` 參數。
 
