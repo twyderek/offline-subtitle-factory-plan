@@ -37,3 +37,13 @@ credentials/
 **/*token*
 npm-debug.log*
 .DS_Store
+APP-PROJECT/
+
+# Build artifacts and outputs
+app/coverage/
+app/breeze-runtime-output/
+app/docs/project-management/evidence/2026-09-07-*
+
+# Release checksums (generated)
+app/RELEASE-SHA256-*.txt
+app/RELEASE-SHA256SUMS-*.txt
