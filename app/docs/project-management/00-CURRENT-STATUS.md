@@ -1,10 +1,20 @@
 # 目前專案狀態
 
-> 最後查證日期：2026-09-01
+> 最後查證日期：2026-09-07
 > 現行版本：0.51.0（LM Studio removal breaking candidate）
 > 現行公開版本：0.50.0（GitHub Latest）
 > 發布 tag／commit：`v0.50.0` → `44c40225e2b0a39e759048439e3db912b6333ad9`；既有 `v0.49.1` 保留
 > 主分支：`main`
+
+## 0.51.1 external candidate Windows pristine waiver（2026-09-07）
+
+- 外部候選版本：`0.51.1`；authoritative binary candidate commit：`36062c9c3c5e57af662eab29fe52eb745ce5d606`；remote validation ref：`codex/release-0.51.1-external-candidate`。
+- 本地 checkout 仍是 `codex/remove-lm-studio`／`3469618e00255767cbb26735e71dcc68e7f31891`、package version `0.51.0`；本節只記錄 requester-provided external candidate context，不把本地 checkout 當作 0.51.1 source proof。
+- Windows host qualification：`FAIL_NO_APPROVED_ENVIRONMENT`；`WINDOWS_LOCAL_PRISTINE=TEST_GAP`；Setup、Portable、migration、uninstall 與 clean-host SmartScreen／Authenticode observation 維持 `NOT_RUN`／`NOT_AVAILABLE`。
+- 需求方已授予 exact candidate scope 的 Windows pristine release-risk waiver：`WINDOWS_PRISTINE_WAIVER=GRANTED_BY_REQUESTER`、`WINDOWS_PRISTINE_RELEASE_BLOCKER=WAIVED`；testing gap 未解除，任何 binary-affecting change 必須重新評估。
+- 獨立複審：`docs/project-management/reviews/2026-09-07-0-51-1-windows-pristine-waiver-review.md`；結論為 `RELEASE_CANDIDATE_ACCEPTANCE=CONDITIONAL_PASS`、`PUBLIC_RELEASE_READINESS=READY_FOR_AUTHORIZATION`、`STABLE_RELEASE_RECOMMENDATION=CONDITIONAL`。
+- `PUBLIC_RELEASE_PROVENANCE=UNVERIFIED` 與 `PUBLIC_RELEASE_UPLOAD=NOT_RUN` 仍如實保留；`PUBLIC_RELEASE_AUTHORIZATION=NOT_GRANTED`，本候選尚未建立 tag／Release、未 push tag、未上傳 public assets。
+- Waiver evidence：`docs/project-management/evidence/2026-09-07-windows-pristine-waiver-0511.json`。Windows CI／artifact provenance 仍是 requester-provided context，未於本地重新下載或重跑。
 
 ## 0.51.0 LM Studio removal preparation（REL-041）
 

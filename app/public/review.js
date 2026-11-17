@@ -4,31 +4,12 @@ import { assessSubtitleCue, filterQualityCues } from './subtitle-quality.mjs';
 import { selectAiCues } from './ai-scope.mjs';
 import { invalidAiApiResponseError, isNetworkFetchFailure, normalizeAiFetchError } from './ai-fetch.mjs';
 import { fetchAiStatusWithRetry } from './ai-status-recovery.mjs';
+import { API_BASE, appUrl } from './shared/api.mjs';
+import { createVirtualList } from './shared/components.mjs';
 
 // API base URL — Web/Electron 都使用目前頁面的本機伺服器
-const API_BASE = window.location.origin.startsWith('http')
-  ? window.location.origin
-  : 'http://127.0.0.1:8790';
 const ASS_PLAY_RES_Y = 1080;
-const API_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
 const AI_TOOLBAR_COLLAPSED_KEY = 'offline-subtitle-factory.ai-toolbar-collapsed';
-const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
-  const requestUrl = new URL(typeof input === 'string' ? input : input.url, window.location.href);
-  if (!API_TOKEN || requestUrl.origin !== API_BASE || !requestUrl.pathname.startsWith('/api/')) {
-    return nativeFetch(input, init);
-  }
-  const headers = new Headers(input instanceof Request ? input.headers : undefined);
-  new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
-  headers.set('X-Offline-Subtitle-Token', API_TOKEN);
-  return nativeFetch(input, { ...init, headers });
-};
-
-function appUrl(pathname) {
-  const url = new URL(pathname, `${API_BASE}/`);
-  if (API_TOKEN) url.searchParams.set('token', API_TOKEN);
-  return url.toString();
-}
 
 const jobId = location.pathname.split('/').filter(Boolean).at(-1);
 
@@ -68,6 +49,14 @@ const ids = [
   'reviewTimeline', 'timelineRuler', 'reviewWaveform', 'waveformStatus', 'timelinePlayhead',
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
+const VIRTUAL_CUE_THRESHOLD = 500;
+const VIRTUAL_CUE_ITEM_HEIGHT = 260;
+let virtualCueItems = [];
+const virtualCueList = createVirtualList(el.cueList, {
+  itemHeight: VIRTUAL_CUE_ITEM_HEIGHT,
+  overscan: 4,
+  renderItem: ({ cue, index }) => createCueElement(cue, index).outerHTML,
+});
 const settingIds = ['fontFamily', 'fontSize', 'fontColor', 'outlineColor', 'outlineWidth', 'subtitlePosition', 'marginV', 'bold'];
 const aiSettingIds = ['aiEnabled', 'aiProvider', 'aiBaseUrl', 'aiModel', 'aiDeployment', 'aiApiVersion', 'aiBatchSize', 'aiApiKey', 'aiLanguage', 'aiCustomLanguage', 'aiTimeoutSeconds', 'aiMaxRetries', 'aiRetryBaseMs', 'aiInstructions'];
 const VALID_AI_PROVIDERS = ['openai', 'openai-compatible', 'azure', 'groq', 'gemini', 'ollama'];
@@ -1060,56 +1049,68 @@ function parseSrt(text) {
     .filter((cue) => cue && Number.isFinite(cue.start) && Number.isFinite(cue.end) && (cue.text || cue.end > cue.start));
 }
 
+function createCueElement(cue, index) {
+  const quality = assessSubtitleCue(cue);
+  const item = document.createElement('article');
+  item.className = 'review-cue';
+  item.dataset.index = String(index);
+  item.classList.toggle('active', index === state.activeIndex);
+  item.classList.toggle('changed', state.changed.has(index));
+  item.classList.toggle('selected', state.selectedCueIds.has(String(cue.id)));
+  const aiSuggestion = state.aiSuggestions.get(String(cue.id));
+  const aiModeLabel = {
+    proofread: '錯字與標點',
+    breaks: '斷句優化',
+    terms: '術語統一',
+    fillers: '移除贅詞',
+    translate: '翻譯',
+  }[aiSuggestion?.mode] || 'AI 優化';
+  item.innerHTML = `
+    <div class="review-cue-number"><input class="review-cue-select" type="checkbox" aria-label="選取字幕 ${index + 1}" ${state.selectedCueIds.has(String(cue.id)) ? 'checked' : ''}><br>${index + 1}</div>
+    <div class="review-cue-content">
+      <div class="review-cue-meta">
+        <div class="review-time">${cue.startRaw} <span>→</span> ${cue.endRaw}</div>
+        <span class="${quality.reasons.length || hasRuleWarning(cue.translatedText) ? 'review-chip warn' : 'review-chip'}">${quality.reasons.length ? escapeHtml(`風險 ${quality.score} · ${quality.reasons.join('、')}`) : (hasRuleWarning(cue.translatedText) ? '待檢查' : '已確認')}</span>
+        <button class="jump cue-more" type="button" title="跳到此字幕">•••</button>
+      </div>
+      <label class="bilingual-edit-field">原文<textarea class="source-text" aria-label="字幕 ${index + 1} 原文">${escapeHtml(cue.sourceText)}</textarea></label>
+      <label class="bilingual-edit-field">譯文<textarea class="translated-text" aria-label="字幕 ${index + 1} 譯文">${escapeHtml(cue.translatedText)}</textarea></label>
+      ${aiSuggestion ? `<div class="review-ai-suggestion">
+        <div><strong>AI 建議</strong><span>${escapeHtml(aiModeLabel)}</span></div>
+        <p>${escapeHtml(aiSuggestion.text)}</p>
+        <div><button class="accept-ai-suggestion" type="button">接受</button><button class="reject-ai-suggestion" type="button">略過</button></div>
+      </div>` : ''}
+      <div class="cue-advanced-actions">
+        <label class="duration-field">長度（秒）<input class="duration-input" type="number" min="0.1" step="0.1" value="${formatDuration(cue.end - cue.start)}"></label>
+        <div class="cue-mini-buttons"><button class="shorten-cue" type="button">縮短</button><button class="extend-cue" type="button">延長</button></div>
+        <button class="split-cue" type="button">分割</button>
+        <button class="merge-next" type="button">合併下段</button>
+        <button class="delete-cue" type="button">刪除</button>
+      </div>
+    </div>
+  `;
+  return item;
+}
+
 function renderCueList() {
-  el.cueList.innerHTML = '';
-  const fragment = document.createDocumentFragment();
+  const visibleItems = [];
   const query = state.search.toLowerCase();
   const qualityCues = new Set(filterQualityCues(state.cues, state.qualityFilter).map((cue) => cue.id));
   state.cues.forEach((cue, index) => {
     if (query && !`${cue.sourceText} ${cue.translatedText}`.toLowerCase().includes(query)) return;
     if (!qualityCues.has(cue.id)) return;
-    const quality = assessSubtitleCue(cue);
-    const item = document.createElement('article');
-    item.className = 'review-cue';
-    item.dataset.index = String(index);
-    item.classList.toggle('active', index === state.activeIndex);
-    item.classList.toggle('changed', state.changed.has(index));
-    item.classList.toggle('selected', state.selectedCueIds.has(String(cue.id)));
-    const aiSuggestion = state.aiSuggestions.get(String(cue.id));
-    const aiModeLabel = {
-      proofread: '錯字與標點',
-      breaks: '斷句優化',
-      terms: '術語統一',
-      fillers: '移除贅詞',
-      translate: '翻譯',
-    }[aiSuggestion?.mode] || 'AI 優化';
-    item.innerHTML = `
-      <div class="review-cue-number"><input class="review-cue-select" type="checkbox" aria-label="選取字幕 ${index + 1}" ${state.selectedCueIds.has(String(cue.id)) ? 'checked' : ''}><br>${index + 1}</div>
-      <div class="review-cue-content">
-        <div class="review-cue-meta">
-          <div class="review-time">${cue.startRaw} <span>→</span> ${cue.endRaw}</div>
-          <span class="${quality.reasons.length || hasRuleWarning(cue.translatedText) ? 'review-chip warn' : 'review-chip'}">${quality.reasons.length ? escapeHtml(`風險 ${quality.score} · ${quality.reasons.join('、')}`) : (hasRuleWarning(cue.translatedText) ? '待檢查' : '已確認')}</span>
-          <button class="jump cue-more" type="button" title="跳到此字幕">•••</button>
-        </div>
-        <label class="bilingual-edit-field">原文<textarea class="source-text" aria-label="字幕 ${index + 1} 原文">${escapeHtml(cue.sourceText)}</textarea></label>
-        <label class="bilingual-edit-field">譯文<textarea class="translated-text" aria-label="字幕 ${index + 1} 譯文">${escapeHtml(cue.translatedText)}</textarea></label>
-        ${aiSuggestion ? `<div class="review-ai-suggestion">
-          <div><strong>AI 建議</strong><span>${escapeHtml(aiModeLabel)}</span></div>
-          <p>${escapeHtml(aiSuggestion.text)}</p>
-          <div><button class="accept-ai-suggestion" type="button">接受</button><button class="reject-ai-suggestion" type="button">略過</button></div>
-        </div>` : ''}
-        <div class="cue-advanced-actions">
-          <label class="duration-field">長度（秒）<input class="duration-input" type="number" min="0.1" step="0.1" value="${formatDuration(cue.end - cue.start)}"></label>
-          <div class="cue-mini-buttons"><button class="shorten-cue" type="button">縮短</button><button class="extend-cue" type="button">延長</button></div>
-          <button class="split-cue" type="button">分割</button>
-          <button class="merge-next" type="button">合併下段</button>
-          <button class="delete-cue" type="button">刪除</button>
-        </div>
-      </div>
-    `;
-    fragment.appendChild(item);
+    visibleItems.push({ cue, index });
   });
-  el.cueList.appendChild(fragment);
+  if (visibleItems.length > VIRTUAL_CUE_THRESHOLD) {
+    virtualCueItems = visibleItems;
+    virtualCueList.setItems(visibleItems);
+  } else {
+    virtualCueItems = [];
+    virtualCueList.reset();
+    const fragment = document.createDocumentFragment();
+    visibleItems.forEach(({ cue, index }) => fragment.appendChild(createCueElement(cue, index)));
+    el.cueList.appendChild(fragment);
+  }
 }
 
 function getCueEventIndex(event) {
@@ -1209,7 +1210,15 @@ function setActiveCue(index) {
   document.querySelectorAll('.review-cue.active').forEach((node) => node.classList.remove('active'));
   if (index >= 0) {
     const cue = state.cues[index];
-    const node = el.cueList.querySelector(`[data-index="${index}"]`);
+    let node = el.cueList.querySelector(`[data-index="${index}"]`);
+    if (!node && state.followCue && virtualCueItems.length) {
+      const virtualIndex = virtualCueItems.findIndex((item) => item.index === index);
+      if (virtualIndex >= 0) {
+        const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+        virtualCueList.scrollToIndex(virtualIndex, { behavior, block: 'center' });
+        node = el.cueList.querySelector(`[data-index="${index}"]`);
+      }
+    }
     if (node) {
       node.classList.add('active');
       if (state.followCue) {

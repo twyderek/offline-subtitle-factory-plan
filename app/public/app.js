@@ -1,28 +1,7 @@
 import { AI_PROVIDER_MIGRATION_NOTICE, migrateImportedProject, migrateLegacyAiLocalStorage } from './ai-provider-settings.mjs';
+import { API_BASE, appUrl } from './shared/api.mjs';
 
-// API base URL — Web/Electron 都使用目前頁面的本機伺服器
-const API_BASE = window.location.origin.startsWith('http')
-  ? window.location.origin
-  : 'http://127.0.0.1:8790';
-const API_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
 const legacyAiStorageMigration = migrateLegacyAiLocalStorage(localStorage);
-const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
-  const requestUrl = new URL(typeof input === 'string' ? input : input.url, window.location.href);
-  if (!API_TOKEN || requestUrl.origin !== API_BASE || !requestUrl.pathname.startsWith('/api/')) {
-    return nativeFetch(input, init);
-  }
-  const headers = new Headers(input instanceof Request ? input.headers : undefined);
-  new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
-  headers.set('X-Offline-Subtitle-Token', API_TOKEN);
-  return nativeFetch(input, { ...init, headers });
-};
-
-function appUrl(pathname) {
-  const url = new URL(pathname, `${API_BASE}/`);
-  if (API_TOKEN) url.searchParams.set('token', API_TOKEN);
-  return url.toString();
-}
 
 async function openExternalUrl(url) {
   if (!url || url === '#') return;

@@ -10,7 +10,7 @@ const sourceAppDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const appDir = process.env.OFFLINE_SUBTITLE_TEST_APP_DIR
   ? path.resolve(process.env.OFFLINE_SUBTITLE_TEST_APP_DIR)
   : sourceAppDir;
-const serverSourceForAssertions = fs.readFileSync(path.join(appDir, 'server.mjs'), 'utf8');
+const serverSourceForAssertions = fs.readFileSync(path.join(appDir, 'server-runtime.mjs'), 'utf8');
 assert.match(serverSourceForAssertions, /state\.error = null;\s*state\.cancelRequested = false;\s*state\.message = 'Breeze ASR 25 已準備完成'/, 'managed runtime successful retry must clear stale cancellation state');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offline-subtitle-test-'));
 fs.mkdirSync(path.join(dataDir, 'config'), { recursive: true });

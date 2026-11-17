@@ -1,3 +1,4 @@
+/** @typedef {import('../types/settings.ts').AppSettings} AppSettings */
 import { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
