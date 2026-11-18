@@ -17,6 +17,12 @@
   - 核准人／角色：需求提出者／產品負責人（本次對話使用者）。
   - 核准時間：2026-11-18（本次明確要求打包、測試 Mac APP 並發布 GitHub）。
   - 核准範圍：本次將 Electron 修補至 `43.8.10`、升版 `0.52.2`、macOS arm64 APP 打包／限定實機 smoke，並建立 macOS arm64 GitHub Release；接受 ad-hoc、未使用 Apple Developer ID 簽章／公證的限制，依 `AUTH-2026-07-23-01` 揭露。此範圍不含修改既有 tag／Release、建立 Windows `v0.52.2` 資產、刪除或覆寫既有資產，或將未驗收平台宣稱為通過。
+- 本機建置與驗證：`npm ci`、隔離系統 Python 的 `npm run check`、`npm audit --omit=dev`（0 vulnerabilities）、runtime manifest／hash、macOS arm64 build、DMG／ZIP 完整性、ad-hoc deep strict signature、SHA-256／updater metadata、DMG 與 ZIP 內 packaged renderer smoke 均通過；full audit 為 5 moderate／6 high build-time findings，三個 Ollama 整合項明確 skip。完整結果與限制見 `docs/project-management/06-TEST-AND-PROCESS-AUDIT.md` 及機器證據。
+- 獨立審查是否執行：是（round1；六面向）。
+- 獨立審查結論：
+  - 審查檔案：[`docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md`](docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md)
+  - 判定（逐字引用「綜合判定」完整單句結論，第 48 行）：**本輪獨立審查結論為有條件通過：本機發布前可核對項目的授權、候選來源／版本、風險揭露、SHA-256、updater SHA-512／大小、arm64 目標及 ad-hoc 嚴格簽章均一致，沒有阻擋建立 GitHub Release 的未解問題；完整回歸與 packaged renderer smoke 僅依候選工作紀錄採信而未由本審查重跑，GitHub API digest 與直接下載 bytes 反向核對則須於發布後完成才能結案。**
+  - 條件／結案項目：發布後以 GitHub API 核對各資產 digest，並直接下載後驗證 bytes／checksum／updater metadata；未完成前不得標記整項發布結案。
 
 ## 2026-11-18 — v0.52.1 GitHub pre-release 同步與 Windows unsigned APP 資產發布
 

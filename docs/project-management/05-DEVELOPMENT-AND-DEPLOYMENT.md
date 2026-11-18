@@ -4,7 +4,7 @@
 
 - Node.js 22.12.0 以上；CI 目前使用 Node.js 22。Electron 43 的安裝工具鏈不再支援 Node 20。
 - NVIDIA NIM provider 使用外部 OpenAI-compatible endpoint；預設 `https://integrate.api.nvidia.com/v1`，API Key 只可經受控環境／安全金鑰流程提供，不得寫入 repo、一般設定、log 或封裝 artifact。`/models` 成功僅證明 endpoint／認證／模型清單契約，不代表模型品質或可計費服務已完成驗收。
-- GitHub `v0.52.1` 已公開 Windows x64 unsigned assets，非 Latest；其 Electron 43.8.0 受 GHSA-jr5w-w6x2-84p9 影響。`v0.52.2` 以 source tag commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立，鎖定 Electron 43.8.10／electron-builder 26.18.1，僅建置 macOS arm64。完整 `npm run check`、runtime hash、`.app`／DMG／ZIP、signature、container、SHA-256／updater metadata 與兩種分發包 renderer smoke 已通過；獨立審查、GitHub 發布與下載反向核對待完成。production audit 為 0 vulnerabilities；full audit 有 11 項 build-time findings（5 moderate／6 high），已揭露。依 `workflows/06-BUILD-RELEASE.md`／`workflows/07-DOCUMENT-CLOSEOUT.md`，`docs:check:final` 於發布及資產核對後執行；不修改既有 tag／Release，不建立 Windows `v0.52.2` assets。
+- GitHub `v0.52.1` 已公開 Windows x64 unsigned assets，非 Latest；其 Electron 43.8.0 受 GHSA-jr5w-w6x2-84p9 影響。`v0.52.2` 以 source tag commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立，鎖定 Electron 43.8.10／electron-builder 26.18.1，僅建置 macOS arm64。完整 `npm run check`、runtime hash、`.app`／DMG／ZIP、signature、container、SHA-256／updater metadata 與兩種分發包 renderer smoke 已通過；獨立審查有條件通過、無發布前阻擋。GitHub 發布與發布後 API digest／下載 bytes 反向核對待完成。production audit 為 0 vulnerabilities；full audit 有 11 項 build-time findings（5 moderate／6 high），已揭露。依 `workflows/06-BUILD-RELEASE.md`／`workflows/07-DOCUMENT-CLOSEOUT.md`，`docs:check:final` 於發布及資產核對後執行；不修改既有 tag／Release，不建立 Windows `v0.52.2` assets。
 - 0.50.0 開發分支目前只變更 Breeze 效能參考 payload、選取後提醒與版本識別；尚未建立 tag／Release。若進入發布流程，需以 `v0.50.0` 重新建置並重新核對雙平台資產。
 - Windows 10/11 x64；封裝由 `windows-2022` runner 執行。
 - Apple Silicon macOS 12 以上。
@@ -13,7 +13,7 @@
 
 - Source 基礎：GitHub `v0.52.1` tag peeled commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`；版本 `0.52.2`，Electron `43.8.10`，electron-builder `26.18.1`。
 - 目標平台：macOS arm64、macOS 12+；ad-hoc signature，無 Developer ID／公證。GitHub `v0.52.1` Windows assets 不變，本輪沒有 Windows `v0.52.2`。
-- 驗證狀態：`npm run check`、source 與 bundled runtime hash、`.app`／DMG／ZIP 建置、DMG `hdiutil verify`、ZIP `unzip -tq`、四項 SHA-256 sidecar 與 latest-mac.yml version／size／SHA-512 核對通過。從實際 DMG／ZIP 內 app 執行 packaged renderer smoke 均 exit 0；獨立審查與 GitHub asset provenance／下載反向核對待完成。
+- 驗證狀態：`npm run check`、source 與 bundled runtime hash、`.app`／DMG／ZIP 建置、DMG `hdiutil verify`、ZIP `unzip -tq`、四項 SHA-256 sidecar 與 latest-mac.yml version／size／SHA-512 核對通過。從實際 DMG／ZIP 內 app 執行 packaged renderer smoke 均 exit 0；獨立審查有條件通過且無發布前阻擋，GitHub asset provenance／下載反向核對待完成。
 - 稽核狀態：`npm audit --omit=dev` 為 0 vulnerabilities；full audit 有 11 項 build-time dependency findings（5 moderate／6 high），已於 Release notes 揭露。Ollama packaged/offline integration 因候選 bundle／Seatbelt／預裝模型條件缺少而 skip，真實 Google／YouTube 與完整轉錄品質未驗收。
 
 ## 2026-11-18 v0.52.1 GitHub Windows-only release

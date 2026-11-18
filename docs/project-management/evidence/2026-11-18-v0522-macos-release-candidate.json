@@ -1,7 +1,17 @@
 {
   "schemaVersion": 1,
   "release": "v0.52.2",
-  "status": "candidate-verified-review-pending",
+  "status": "candidate-verified-review-conditional-pass",
+  "independentReview": {
+    "report": "docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md",
+    "round": 1,
+    "verdict": "conditional-pass",
+    "publicationBlockers": 0,
+    "closeoutConditions": [
+      "Verify GitHub API asset digests after upload",
+      "Download published assets and verify bytes, checksums, and updater metadata"
+    ]
+  },
   "sourceBaseline": {
     "tag": "v0.52.1",
     "commit": "75d01a9ecd112f998ca1765e4d1d71e75c674e61"

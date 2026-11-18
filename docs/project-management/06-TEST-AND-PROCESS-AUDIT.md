@@ -9,7 +9,8 @@
 - **容器與 SHA-256**：DMG `249,905,137` bytes、SHA-256 `78c921d8e9bff21c50cf3271656907ef0fdeda76ce674dfa934a8c52c8c7cf09`；`hdiutil verify` 回報 `VALID`。ZIP `258,647,964` bytes、SHA-256 `2b1c74424b9848c8bfa1ca041045155fd851258bbaf7af9edfdc741badd3978d`；`unzip -tq` 無錯誤。DMG／ZIP blockmap 分別 `261,538`／`269,214` bytes，SHA-256 見 `SHA256SUMS-macos-arm64.txt`。四項 sidecar `shasum -a 256 -c` 全數 OK。
 - **Updater metadata**：electron-builder 本次未自動產生 `latest-mac.yml`；候選以實際 ZIP／DMG bytes 產生 `version`、檔名、size、SHA-512、default ZIP path 與 release date，再以 YAML parser 解析並逐檔比對 size／SHA-512。metadata 及 checksum sidecar 將隨 GitHub Release 一併上傳；尚待 GitHub API digest／直接下載反向核對。
 - **分發包 smoke**：實際唯讀掛載 DMG 與解壓 ZIP，各自啟動內含 app 並執行 `scripts/verify-electron-renderer.mjs`；兩者 exit 0。首頁／設定、Breeze 選擇與取消、SRT upload→completed→cleaned SRT、AI review／provider IDs／glossary round trip、YouTube PNG／DOCX 實際讀取、合成影片 trim→完成→post-trim subtitle job 均通過。`folderIconFlow` 回報 Windows 測試路徑 open skipped；沒有真實 Google／YouTube 網路／帳號，也未驗證有效播放、完整轉錄或字幕品質。
-- **持續狀態**：機器可讀證據 `docs/project-management/evidence/2026-11-18-v0522-macos-release-candidate.json`；GitHub release 尚未建立，獨立六面向審查待完成。此候選範圍不涵蓋 clean-account 安裝、Gatekeeper、macOS 12+ 全版矩陣或 Windows `v0.52.2`。
+- **獨立審查**：round1 報告 `docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md` 完成六面向核對，結論有條件通過；授權、候選來源／版本、風險揭露、SHA-256、updater SHA-512／大小、arm64 與 ad-hoc 嚴格簽章一致，沒有阻擋建立 Release 的未解問題。完整回歸及 packaged renderer smoke 依候選紀錄採信，本輪未重跑。
+- **持續狀態**：機器可讀證據 `docs/project-management/evidence/2026-11-18-v0522-macos-release-candidate.json`；GitHub release 尚未建立。發布後仍須核對 GitHub API digest 與直接下載 bytes 才可結案。此候選範圍不涵蓋 clean-account 安裝、Gatekeeper、macOS 12+ 全版矩陣或 Windows `v0.52.2`。
 
 ## 2026-11-18 v0.52.1 GitHub pre-release package gate
 
