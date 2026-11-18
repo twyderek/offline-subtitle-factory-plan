@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": "v0.52.2",
-  "status": "candidate-verified-review-conditional-pass",
+  "status": "published-verified-document-closeout-complete",
   "independentReview": {
     "report": "docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md",
     "round": 1,
@@ -10,6 +10,62 @@
     "closeoutConditions": [
       "Verify GitHub API asset digests after upload",
       "Download published assets and verify bytes, checksums, and updater metadata"
+    ]
+  },
+  "publication": {
+    "releaseId": 449696327,
+    "tagCommit": "34fa784aba56db1634b31ba2dbdad22db94efc9d",
+    "url": "https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.2",
+    "draft": false,
+    "prerelease": false,
+    "latest": false,
+    "repositoryLatest": "v0.51.1",
+    "githubApiDigestVerification": "pass; 8 of 8 assets",
+    "directDownloadByteVerification": "pass; 8 of 8 assets match local candidate",
+    "sha256Sidecar": "pass; 4 of 4 listed package/blockmap files",
+    "updaterMetadata": "pass; version, size, and SHA-512 match published DMG/ZIP bytes",
+    "documentCloseout": "pass; npm run docs:check:final exit 0 and git diff --check pass",
+    "githubAssets": [
+      {
+        "name": "BUILD-PROVENANCE-macos-arm64.json",
+        "size": 3971,
+        "sha256": "1c9f8cbbdc5e200fc714b94d6ec8c8fdf64b41175370bb9461b8effc87e54efd"
+      },
+      {
+        "name": "latest-mac.yml",
+        "size": 2220,
+        "sha256": "b9891b586ef8d1515578db67fbf1298055cdad7c93334ea9e3e49a65edee98e9"
+      },
+      {
+        "name": "offline-subtitle-factory-0.52.2-macos-arm64.dmg",
+        "size": 249905137,
+        "sha256": "78c921d8e9bff21c50cf3271656907ef0fdeda76ce674dfa934a8c52c8c7cf09"
+      },
+      {
+        "name": "offline-subtitle-factory-0.52.2-macos-arm64.dmg.blockmap",
+        "size": 261538,
+        "sha256": "6c355bba982a3f6c18a7f31a89a7168919ec25c763b016a75e029b086db17669"
+      },
+      {
+        "name": "offline-subtitle-factory-0.52.2-macos-arm64.zip",
+        "size": 258647964,
+        "sha256": "2b1c74424b9848c8bfa1ca041045155fd851258bbaf7af9edfdc741badd3978d"
+      },
+      {
+        "name": "offline-subtitle-factory-0.52.2-macos-arm64.zip.blockmap",
+        "size": 269214,
+        "sha256": "fab577eeb174254f8156e71d5e6df0c150e41a8d4970ea31e468e81dbcb78ee7"
+      },
+      {
+        "name": "SHA256SUMS-macos-arm64.txt",
+        "size": 474,
+        "sha256": "eda8a488668d951ca91ce24751c54f8cbed568e6f19b3ccd646873a6afe1ae46"
+      },
+      {
+        "name": "SIGNING-STATUS-macos-arm64.txt",
+        "size": 170,
+        "sha256": "bb8e703ce4f4319b690418e56f7fd59ccd5da9bad85b07981d602dad1d0a5130"
+      }
     ]
   },
   "sourceBaseline": {

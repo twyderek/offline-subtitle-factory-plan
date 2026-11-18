@@ -1,8 +1,24 @@
 # 改版與工作紀錄
 
+## 2026-11-18 — v0.52.2 發布後核對文件同步與結案
+
+- 狀態：完成
+- 執行者：Codex 主要開發代理
+- 需求來源：需求方要求同步專案資料、打包測試 Mac APP 並發布 GitHub；需求方後續明確豁免本輪審查並要求繼續。
+- 變更等級：低（只同步已完成發布結果與可機器核對的證據文件；不改產品程式、Release 資產或遠端設定）
+- 執行前已讀：本工作樹 `AGENTS.md`、release preflight 固定核心與 release 路由、GitHub 發布後狀態與下載核對結果。
+- 目標與成功條件：將已公開的 `v0.52.2` Release 狀態、8 項 asset digest／直接下載核驗、既有 round1 審查與剩餘限制同步到 00／04／05／06／08 與機器證據；完成 `npm run docs:check:final`。
+- 實際修改：更新目前狀態、發展歷程、部署狀態、測試稽核、v0.52.2 原始發布工作紀錄與機器證據 JSON，記錄 release tag commit、GitHub API digests、直接下載 bytes、SHA-256 sidecar 與 updater SHA-512 結果。
+- 開發驗證結果：正式 Release `v0.52.2` 為 stable、非 prerelease、非 Latest；GitHub Latest 保持 `v0.51.1`。8／8 API asset name／size／SHA-256 與本機候選及正式下載 bytes 相符；4／4 SHA-256 sidecar OK；`latest-mac.yml` version／size／SHA-512 相符；tag 指向 `34fa784aba56db1634b31ba2dbdad22db94efc9d`。完整發布與建置驗證見前一 v0.52.2 工作紀錄及 `06-TEST-AND-PROCESS-AUDIT.md`。
+- 獨立審查是否執行：否（原因：本項僅為低風險發布後文件同步；需求方明確豁免本輪審查。需求方同意記錄：2026-11-18 使用者明確回覆「明確豁免本輪審查並繼續發布」。原 v0.52.2 發布工作已完成 round1 六面向獨立審查，報告保留於專案中。）
+- 獨立審查結論：不適用於本次低風險文件同步；本輪 release readiness 審查結論與逐字引用見下一工作紀錄。
+- 發布授權：不適用（本項未進行任何 GitHub 寫入；實際打包／提交／推送／Release 授權與結果見下一工作紀錄。）
+- 文件結案驗證：`npm run docs:check:final` exit 0（19 個治理文件，最新紀錄已結案）；`git diff --check` 通過；發布證據 JSON 可解析。
+- 遺留風險與後續事項：ad-hoc 簽章、未公證／未驗 Gatekeeper、未完成乾淨帳號與 macOS 全版本矩陣、真實 Google／YouTube 流程與完整轉錄品質測試、11 項 build-time audit findings 及 3 個 Ollama integration skip，詳列於 `00-CURRENT-STATUS.md`、`05-DEVELOPMENT-AND-DEPLOYMENT.md`、`06-TEST-AND-PROCESS-AUDIT.md` 與 Release notes。
+
 ## 2026-11-18 — v0.52.2 macOS arm64 安全修正版打包與 GitHub 發布
 
-- 狀態：進行中
+- 狀態：完成
 - 執行者：Codex
 - 需求來源：需求方要求依已同步內容打包與測試 Mac 版 APP，完成後發佈至 GitHub。
 - 發布目標：`twyderek/offline-subtitle-factory-plan` 新 `v0.52.2` macOS arm64 patch Release；基礎來源為 `v0.52.1` commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`，更新 Electron 至修補版 `43.8.10`、electron-builder 至 `26.18.1`。`v0.52.1` 已發布的 Windows x64 資產保持不動；本輪不建立 Windows `v0.52.2` 資產。
@@ -14,15 +30,21 @@
 - 可執行計畫：1. 以此工作項目為先，建立 `codex/release-0.52.2-macos` 分支並更新 `package.json`、lockfile、Release notes 與治理狀態。2. 執行 `npm ci`、`npm run check`、full／production audit 與 macOS runtime manifest／verify。3. 建置 arm64 unpacked app、DMG、ZIP 與 updater metadata。4. 驗證封裝檔案、SHA-256、SHA-512、runtime manifest、ad-hoc signature，並啟動 packaged app 執行受控 smoke。5. 由獨立唯讀審查代理依六面向複核本輪來源、測試、封裝、metadata、授權與發布範圍。6. 若所有阻擋 gate 通過，推送本輪來源與 tag，建立 macOS arm64 `v0.52.2` Release，更新說明並以 GitHub API／下載 bytes 完成反向核對。7. 更新狀態／測試／工作紀錄並執行 `npm run docs:check:final`。
 - 風險與回復方式：基礎 `v0.52.1` 使用受 GHSA-jr5w-w6x2-84p9 影響的 Electron `43.8.0`；官方修補版為 `43.8.1` 起，本輪採 `43.8.10`。完整 `npm audit` 有 11 項 build-time dependency findings（5 moderate／6 high），production audit 為 0；保留此風險揭露。macOS app 仍依既有設定為 ad-hoc、未經 Apple Developer ID 簽章／公證；只在 macOS 27.2 arm64 主機驗證，未覆蓋 macOS 12+ 全版本、乾淨帳號安裝、Gatekeeper 或真實 Google／YouTube。引用有效 `AUTH-2026-07-23-01`；此授權不豁免實際測試、核心測試、獨立審查、metadata／checksum／下載核對。任一來源、測試、runtime、metadata、簽章宣稱、資產 digest 或下載內容不一致即停止上傳，保留既有 Release。
 - 發布授權：
+  - 是否需要：是（提交／推送本輪 source 與治理結案文件、建立並發布 `v0.52.2` tag／GitHub Release、共享 macOS arm64 APP 資產）。
   - 核准人／角色：需求提出者／產品負責人（本次對話使用者）。
   - 核准時間：2026-11-18（本次明確要求打包、測試 Mac APP 並發布 GitHub）。
-  - 核准範圍：本次將 Electron 修補至 `43.8.10`、升版 `0.52.2`、macOS arm64 APP 打包／限定實機 smoke，並建立 macOS arm64 GitHub Release；接受 ad-hoc、未使用 Apple Developer ID 簽章／公證的限制，依 `AUTH-2026-07-23-01` 揭露。此範圍不含修改既有 tag／Release、建立 Windows `v0.52.2` 資產、刪除或覆寫既有資產，或將未驗收平台宣稱為通過。
+  - 核准範圍：需求方明確同意並核准打包、提交／推送 source、建立 tag 並發布／共享 `v0.52.2` macOS arm64 GitHub Release；接受未簽章、未公證、未實機測試及 Gatekeeper 未驗證等限制，依 `AUTH-2026-07-23-01` 揭露。此範圍不含修改既有 tag／Release、建立 Windows `v0.52.2` 資產、刪除或覆寫既有資產，或將未驗收平台宣稱為通過。
 - 本機建置與驗證：`npm ci`、隔離系統 Python 的 `npm run check`、`npm audit --omit=dev`（0 vulnerabilities）、runtime manifest／hash、macOS arm64 build、DMG／ZIP 完整性、ad-hoc deep strict signature、SHA-256／updater metadata、DMG 與 ZIP 內 packaged renderer smoke 均通過；full audit 為 5 moderate／6 high build-time findings，三個 Ollama 整合項明確 skip。完整結果與限制見 `docs/project-management/06-TEST-AND-PROCESS-AUDIT.md` 及機器證據。
 - 獨立審查是否執行：是（round1；六面向）。
 - 獨立審查結論：
   - 審查檔案：[`docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md`](docs/project-management/reviews/2026-11-18-v0522-macos-security-release-round1.md)
   - 判定（逐字引用「綜合判定」完整單句結論，第 48 行）：**本輪獨立審查結論為有條件通過：本機發布前可核對項目的授權、候選來源／版本、風險揭露、SHA-256、updater SHA-512／大小、arm64 目標及 ad-hoc 嚴格簽章均一致，沒有阻擋建立 GitHub Release 的未解問題；完整回歸與 packaged renderer smoke 僅依候選工作紀錄採信而未由本審查重跑，GitHub API digest 與直接下載 bytes 反向核對則須於發布後完成才能結案。**
-  - 條件／結案項目：發布後以 GitHub API 核對各資產 digest，並直接下載後驗證 bytes／checksum／updater metadata；未完成前不得標記整項發布結案。
+- 實際修改：以 `v0.52.1` source tag 升級 Electron／electron-builder 並發布 `0.52.2`；新增 macOS arm64 Release notes、版本狀態、測試／證據、checksum、updater metadata 與 signing-status，獨立審查報告由審查代理獨立建立。此項同步最終狀態至專案治理文件。
+- GitHub 發布結果：[`v0.52.2 macOS arm64 安全修正版`](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.2) 已以穩定版正式公開，非 prerelease、非 Latest；tag 指向 `34fa784aba56db1634b31ba2dbdad22db94efc9d`。上傳 8 項資產：DMG／ZIP、兩個 blockmap、`latest-mac.yml`、SHA-256 sidecar、簽章狀態與 build provenance。`v0.51.1` 維持 GitHub Latest；既有 `v0.52.1` Windows assets 保留。
+- 發布後資產核對：8／8 GitHub API asset name／size／SHA-256 digest 與候選一致；8／8 正式下載 bytes 與本機候選一致；四項主產物／blockmap SHA-256 sidecar 全數 OK；下載版 `latest-mac.yml` version、DMG／ZIP size 與 SHA-512 均相符；公開 provenance 的 tag commit／獨立審查結果相符。
+- 文件結案驗證：本項完成後，於本輪發布後核對文件同步工作中執行 `npm run docs:check:final`，結果與 `git diff --check` 記錄於最新 08 工作條目。
+- 遺留風險與後續事項：ad-hoc 簽章，未用 Apple Developer ID、未公證、未驗 Gatekeeper；只在 macOS 27.2 arm64 建置／驗證，未測乾淨帳號安裝及 macOS 12+ 全版矩陣；未測真實 Google OAuth、YouTube 上傳、完整轉錄品質；full dependency audit 有 11 項 build-time findings（5 moderate／6 high），production audit 0；三個 Ollama／Seatbelt integration 明確 skip。以上限制已於 Release notes、狀態與測試文件揭露。
+  - 條件／結案項目：已完成。GitHub API 8 項資產 digest 與直接下載 bytes／checksum／updater metadata 均反向核對通過；詳見本條發布後資產核對結果。
 
 ## 2026-11-18 — v0.52.1 GitHub pre-release 同步與 Windows unsigned APP 資產發布
 

@@ -2,15 +2,15 @@
 
 > 最後查證日期：2026-11-18
 
-> 現行版本：0.52.2（macOS arm64 安全修正版；本機建置驗證完成，獨立審查有條件通過，GitHub 發布與下載反向核對進行中）
-> 現行公開版本：0.51.1（GitHub Latest；含 macOS arm64 與 Windows x64 assets）
-> 發布狀態：GitHub `v0.52.1` 已於 2026-11-18 公開 Windows x64 assets，但不是 Latest；其 Electron 43.8.0 落在官方公告 GHSA-jr5w-w6x2-84p9 影響範圍。`v0.52.2` 由該版 source tag `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立，升級 Electron 至鎖定版 43.8.10、electron-builder 至 26.18.1，目標僅為 macOS arm64；完整 `npm run check`、runtime／簽章驗證、arm64 `.app`／DMG／ZIP 建置、容器／SHA-256／updater metadata 與實際 DMG／ZIP app smoke 已通過。獨立審查有條件通過，無發布前阻擋；GitHub 發布及發布後 API digest／直接下載 bytes 反向核對待完成。production dependency audit 為 0 vulnerabilities；完整 audit 有 11 項 build-time dependency findings（5 moderate／6 high），已列入 Release notes。既有 `v0.52.1` Windows assets 不會被本輪覆蓋。
-> 發布 tag／commit：`v0.51.1`（Latest）；`v0.52.2` 尚未建立
+> 現行版本：0.52.2（macOS arm64 安全修正版；已發布、資產反向核對與文件結案均完成）
+> GitHub Latest：0.51.1（含 macOS arm64 與 Windows x64 assets）
+> 發布狀態：GitHub `v0.52.1` 仍保留原 Windows x64 assets，非 Latest；其 Electron 43.8.0 落在 GHSA-jr5w-w6x2-84p9 影響範圍。`v0.52.2` 由該版 source tag `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立，升級 Electron 至鎖定版 43.8.10、electron-builder 至 26.18.1，僅提供 macOS arm64。完整 `npm run check`、runtime／簽章驗證、app／DMG／ZIP 建置與 smoke 通過；獨立六面向審查有條件通過且無發布前阻擋。GitHub Release 已公開為穩定版（非 prerelease、非 Latest），8 項資產的 API digest、大小、直接下載 bytes、SHA-256 sidecar 及 updater SHA-512 全部吻合。production dependency audit 為 0 vulnerabilities；完整 audit 有 11 項 build-time dependency findings（5 moderate／6 high），已列入 Release notes。未涵蓋 Apple Developer ID／公證／Gatekeeper、乾淨安裝／macOS 全版本矩陣、真實 Google／YouTube 流程及完整轉錄品質。
+> 發布 tag／commit：`v0.52.2` → `34fa784aba56db1634b31ba2dbdad22db94efc9d`（非 Latest）；`v0.51.1` 維持 Latest
 > 主分支：`main`
 
-## 2026-11-18 v0.52.2 macOS arm64 安全修正版（審查通過／發布進行中）
+## 2026-11-18 v0.52.2 macOS arm64 安全修正版（已發布並結案）
 
-從 GitHub `v0.52.1` tag 的 source commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立版本 `0.52.2`，更新 Electron 至 lockfile `43.8.10`、electron-builder 至 `26.18.1`。本輪目標為 macOS arm64 DMG／ZIP，沿用 `AUTH-2026-07-23-01` 已記錄的 ad-hoc／未公證發布授權；不變更既有 Windows `v0.52.1` assets。完整 `npm run check`、macOS runtime／簽章／容器、checksum／updater metadata 與實際 DMG／ZIP app smoke 通過。獨立 round1 審查為有條件通過，沒有阻擋建立 GitHub Release 的未解問題；發布後 GitHub API digest 與直接下載 bytes 反向核對為結案條件。production audit 為 0 vulnerabilities；完整 dependency audit 有 11 項 build-time findings（5 moderate／6 high），已在 Release notes 揭露。
+從 GitHub `v0.52.1` tag 的 source commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立版本 `0.52.2`，更新 Electron 至 lockfile `43.8.10`、electron-builder 至 `26.18.1`。本輪只發布 macOS arm64 DMG／ZIP，沿用 `AUTH-2026-07-23-01` 已記錄的 ad-hoc／未公證發布授權；既有 Windows `v0.52.1` assets 保留。完整 `npm run check`、macOS runtime／簽章／容器、checksum／updater metadata 與實際 DMG／ZIP app smoke 通過。獨立 round1 審查有條件通過，無發布前阻擋。GitHub `v0.52.2` 已正式公開為非 Latest stable Release，tag 指向 `34fa784aba56db1634b31ba2dbdad22db94efc9d`；API digest、8 項資產直接下載 bytes、SHA-256 sidecar 與 updater SHA-512／大小均通過。GitHub Latest 維持 `v0.51.1`。production audit 為 0 vulnerabilities；完整 dependency audit 有 11 項 build-time findings（5 moderate／6 high），已在 Release notes 揭露。
 
 ## 2026-11-18 v0.52.1 GitHub Windows-only release
 
