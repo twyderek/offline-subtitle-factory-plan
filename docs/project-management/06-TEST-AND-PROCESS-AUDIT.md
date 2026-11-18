@@ -1,5 +1,16 @@
 # 功能測試與流程稽核
 
+## 2026-11-18 v0.52.2 macOS arm64 security release candidate
+
+- **來源與依賴**：以 `v0.52.1` tag peeled commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 為基礎；package version `0.52.2`、locked Electron `43.8.10`、electron-builder `26.18.1`。環境為 macOS 27.2 arm64、Node `22.22.3`。
+- **完整回歸與稽核**：`npm ci`、隔離系統 Python 的 `PATH` 下 `npm run check` 均 exit 0；核心、provider、校閱 UI、YouTube publisher／SDK／stream／lifecycle tests 通過。三個 Ollama offline／packaged integration 依輸出明確 skip，因 Seatbelt、候選 bundle、Ollama executable 或預裝模型條件不可用；未把 skip 算成 pass。`npm audit --omit=dev` 為 0；完整 audit 有 11 項 build-time findings（5 moderate／6 high），屬開發依賴鏈，已於 `RELEASE-NOTES-0.52.2.md` 揭露。
+- **建置與簽章**：`npm run electron:build:mac` exit 0；產物為 arm64 `.app`、DMG、ZIP。封裝 `Info.plist` 版本 `0.52.2`、最低系統 `12.0`；主程式為 arm64。DMG 與 ZIP 解壓／掛載 app 均通過 `codesign --verify --deep --strict`；簽章為 ad-hoc，無 Team ID、Apple Developer ID 或公證，不代表 Gatekeeper 通過。
+- **Runtime／隱私檢查**：source manifest、DMG app、ZIP app 的 `darwin-arm64` runtime verifier 與 SHA-256 全部通過；僅包含 FFmpeg／FFprobe、Whisper.cpp CLI、tiny model、必要授權／說明與 runtime manifest。封裝 app resources 未找到 `.env`、PEM、key、P12、PFX、mobile provisioning 檔或 POSIX／Windows 個人 profile 路徑。
+- **容器與 SHA-256**：DMG `249,905,137` bytes、SHA-256 `78c921d8e9bff21c50cf3271656907ef0fdeda76ce674dfa934a8c52c8c7cf09`；`hdiutil verify` 回報 `VALID`。ZIP `258,647,964` bytes、SHA-256 `2b1c74424b9848c8bfa1ca041045155fd851258bbaf7af9edfdc741badd3978d`；`unzip -tq` 無錯誤。DMG／ZIP blockmap 分別 `261,538`／`269,214` bytes，SHA-256 見 `SHA256SUMS-macos-arm64.txt`。四項 sidecar `shasum -a 256 -c` 全數 OK。
+- **Updater metadata**：electron-builder 本次未自動產生 `latest-mac.yml`；候選以實際 ZIP／DMG bytes 產生 `version`、檔名、size、SHA-512、default ZIP path 與 release date，再以 YAML parser 解析並逐檔比對 size／SHA-512。metadata 及 checksum sidecar 將隨 GitHub Release 一併上傳；尚待 GitHub API digest／直接下載反向核對。
+- **分發包 smoke**：實際唯讀掛載 DMG 與解壓 ZIP，各自啟動內含 app 並執行 `scripts/verify-electron-renderer.mjs`；兩者 exit 0。首頁／設定、Breeze 選擇與取消、SRT upload→completed→cleaned SRT、AI review／provider IDs／glossary round trip、YouTube PNG／DOCX 實際讀取、合成影片 trim→完成→post-trim subtitle job 均通過。`folderIconFlow` 回報 Windows 測試路徑 open skipped；沒有真實 Google／YouTube 網路／帳號，也未驗證有效播放、完整轉錄或字幕品質。
+- **持續狀態**：機器可讀證據 `docs/project-management/evidence/2026-11-18-v0522-macos-release-candidate.json`；GitHub release 尚未建立，獨立六面向審查待完成。此候選範圍不涵蓋 clean-account 安裝、Gatekeeper、macOS 12+ 全版矩陣或 Windows `v0.52.2`。
+
 ## 2026-11-18 v0.52.1 GitHub pre-release package gate
 
 - **版本／範圍**：root package version `0.52.1`；本輪目標是目前 origin `twyderek/offline-subtitle-factory-plan` 的 Windows x64 unsigned pre-release，未切換到附件計畫指向的另一個 repo，未建置 macOS 資產。

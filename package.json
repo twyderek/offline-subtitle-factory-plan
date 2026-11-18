@@ -1,6 +1,6 @@
 {
   "name": "offline-subtitle-factory",
-  "version": "0.52.1",
+  "version": "0.52.2",
   "private": true,
   "type": "module",
   "description": "Local-first offline subtitle generation frontend MVP.",
@@ -46,8 +46,8 @@
     "node": ">=22.12.0"
   },
   "devDependencies": {
-    "electron": "^43.8.0",
-    "electron-builder": "^26.17.0"
+    "electron": "^43.8.9",
+    "electron-builder": "^26.18.1"
   },
   "build": {
     "appId": "com.offline-subtitle-factory.app",
@@ -86,6 +86,7 @@
       "RELEASE-NOTES-0.51.0.md",
       "RELEASE-NOTES-0.52.0.md",
       "RELEASE-NOTES-0.52.1.md",
+      "RELEASE-NOTES-0.52.2.md",
       "package.json",
       ".gitignore",
       "!**/.env",

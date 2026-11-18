@@ -1,5 +1,23 @@
 # 改版與工作紀錄
 
+## 2026-11-18 — v0.52.2 macOS arm64 安全修正版打包與 GitHub 發布
+
+- 狀態：進行中
+- 執行者：Codex
+- 需求來源：需求方要求依已同步內容打包與測試 Mac 版 APP，完成後發佈至 GitHub。
+- 發布目標：`twyderek/offline-subtitle-factory-plan` 新 `v0.52.2` macOS arm64 patch Release；基礎來源為 `v0.52.1` commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`，更新 Electron 至修補版 `43.8.10`、electron-builder 至 `26.18.1`。`v0.52.1` 已發布的 Windows x64 資產保持不動；本輪不建立 Windows `v0.52.2` 資產。
+- 關聯需求／缺陷：`FR-027`、`FR-028`、`FR-029`、`FR-030`、`NFR-002`、`NFR-006`、`NFR-007`、`NFR-008`。
+- 變更等級：發布。
+- 執行前已讀：v0.52.1 tag checkout 的 release preflight、固定核心與 release 路由；已確認原始 plan repo 工作樹另有未提交修改，建置與治理文件採獨立 worktree。
+- 目標與成功條件：以固定 `v0.52.1` 程式碼為基礎，將 Electron 更新至官方修補版 `43.8.10`、electron-builder 至 `26.18.1` 並升版至 `0.52.2`；在 Apple Silicon macOS 建置 `.app`、DMG 與 ZIP；完整測試、runtime／簽章狀態／容器／checksum／updater metadata 核對通過；實際啟動封裝 app 完成限定 smoke；獨立六面向審查無未處理阻擋；建立 macOS arm64 `v0.52.2` GitHub Release 並反向核對資產與下載內容。
+- 不在範圍：不修改或移動既有 `v0.52.1` tag／Release，不覆蓋或刪除既有資產，不建立 Windows `v0.52.2` 資產，不宣稱 Apple Developer ID／公證／Gatekeeper 通過，不宣稱未測 macOS 版本／乾淨安裝已驗收，不使用真實 Google OAuth／API key 執行上傳。
+- 可執行計畫：1. 以此工作項目為先，建立 `codex/release-0.52.2-macos` 分支並更新 `package.json`、lockfile、Release notes 與治理狀態。2. 執行 `npm ci`、`npm run check`、full／production audit 與 macOS runtime manifest／verify。3. 建置 arm64 unpacked app、DMG、ZIP 與 updater metadata。4. 驗證封裝檔案、SHA-256、SHA-512、runtime manifest、ad-hoc signature，並啟動 packaged app 執行受控 smoke。5. 由獨立唯讀審查代理依六面向複核本輪來源、測試、封裝、metadata、授權與發布範圍。6. 若所有阻擋 gate 通過，推送本輪來源與 tag，建立 macOS arm64 `v0.52.2` Release，更新說明並以 GitHub API／下載 bytes 完成反向核對。7. 更新狀態／測試／工作紀錄並執行 `npm run docs:check:final`。
+- 風險與回復方式：基礎 `v0.52.1` 使用受 GHSA-jr5w-w6x2-84p9 影響的 Electron `43.8.0`；官方修補版為 `43.8.1` 起，本輪採 `43.8.10`。完整 `npm audit` 有 11 項 build-time dependency findings（5 moderate／6 high），production audit 為 0；保留此風險揭露。macOS app 仍依既有設定為 ad-hoc、未經 Apple Developer ID 簽章／公證；只在 macOS 27.2 arm64 主機驗證，未覆蓋 macOS 12+ 全版本、乾淨帳號安裝、Gatekeeper 或真實 Google／YouTube。引用有效 `AUTH-2026-07-23-01`；此授權不豁免實際測試、核心測試、獨立審查、metadata／checksum／下載核對。任一來源、測試、runtime、metadata、簽章宣稱、資產 digest 或下載內容不一致即停止上傳，保留既有 Release。
+- 發布授權：
+  - 核准人／角色：需求提出者／產品負責人（本次對話使用者）。
+  - 核准時間：2026-11-18（本次明確要求打包、測試 Mac APP 並發布 GitHub）。
+  - 核准範圍：本次將 Electron 修補至 `43.8.10`、升版 `0.52.2`、macOS arm64 APP 打包／限定實機 smoke，並建立 macOS arm64 GitHub Release；接受 ad-hoc、未使用 Apple Developer ID 簽章／公證的限制，依 `AUTH-2026-07-23-01` 揭露。此範圍不含修改既有 tag／Release、建立 Windows `v0.52.2` 資產、刪除或覆寫既有資產，或將未驗收平台宣稱為通過。
+
 ## 2026-11-18 — v0.52.1 GitHub pre-release 同步與 Windows unsigned APP 資產發布
 
 - 狀態：完成

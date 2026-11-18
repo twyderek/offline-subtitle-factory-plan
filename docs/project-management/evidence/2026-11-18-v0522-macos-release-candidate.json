@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.52.2",
+  "status": "candidate-verified-review-pending",
+  "sourceBaseline": {
+    "tag": "v0.52.1",
+    "commit": "75d01a9ecd112f998ca1765e4d1d71e75c674e61"
+  },
+  "environment": {
+    "os": "macOS 27.2",
+    "architecture": "arm64",
+    "node": "22.22.3",
+    "electron": "43.8.10",
+    "electronBuilder": "26.18.1"
+  },
+  "verification": {
+    "npmCiExitCode": 0,
+    "npmRunCheckExitCode": 0,
+    "npmRunCheckPath": "sanitized; system Python excluded",
+    "productionAuditVulnerabilities": 0,
+    "fullAudit": {
+      "moderate": 5,
+      "high": 6,
+      "critical": 0,
+      "scope": "development/build dependency tree"
+    },
+    "runtimeManifest": "pass",
+    "packagedRuntimeHashes": "pass",
+    "packagedAppVersion": "0.52.2",
+    "minimumMacOS": "12.0",
+    "appArchitecture": "arm64",
+    "codeSignature": "ad-hoc; codesign deep strict verification passed",
+    "gatekeeper": "not tested",
+    "hdiutilVerify": "VALID",
+    "zipIntegrity": "pass",
+    "updaterMetadataVersionAndSha512": "pass",
+    "sha256Sidecar": "pass",
+    "secretFileScan": "no matching credential/key files found in packaged app resources",
+    "packagedRendererSmoke": {
+      "dmg": "pass",
+      "zip": "pass",
+      "flows": [
+        "home and settings",
+        "subtitle task and SRT cleanup",
+        "Breeze selection/cancel UI",
+        "AI review assets and glossary round trip",
+        "YouTube guide image and DOCX assets",
+        "synthetic trim and post-trim subtitle task"
+      ],
+      "realTranscriptionQuality": "not tested"
+    },
+    "integrationSkips": [
+      "Ollama offline wrapper: Seatbelt/Ollama executable/model store unavailable",
+      "Ollama packaged UI preflight: candidate bundle or Seatbelt unavailable",
+      "Ollama packaged UI spawn-error: packaged bundle/Seatbelt/Ollama/model unavailable"
+    ]
+  },
+  "assets": [
+    {
+      "name": "offline-subtitle-factory-0.52.2-macos-arm64.dmg",
+      "size": 249905137,
+      "sha256": "78c921d8e9bff21c50cf3271656907ef0fdeda76ce674dfa934a8c52c8c7cf09"
+    },
+    {
+      "name": "offline-subtitle-factory-0.52.2-macos-arm64.dmg.blockmap",
+      "size": 261538,
+      "sha256": "6c355bba982a3f6c18a7f31a89a7168919ec25c763b016a75e029b086db17669"
+    },
+    {
+      "name": "offline-subtitle-factory-0.52.2-macos-arm64.zip",
+      "size": 258647964,
+      "sha256": "2b1c74424b9848c8bfa1ca041045155fd851258bbaf7af9edfdc741badd3978d"
+    },
+    {
+      "name": "offline-subtitle-factory-0.52.2-macos-arm64.zip.blockmap",
+      "size": 269214,
+      "sha256": "fab577eeb174254f8156e71d5e6df0c150e41a8d4970ea31e468e81dbcb78ee7"
+    }
+  ],
+  "releaseMetadata": {
+    "latestMacYml": "version/path/size/SHA-512 fields match package bytes",
+    "target": "macOS arm64 only",
+    "windowsAssetsChanged": false
+  },
+  "knownLimits": [
+    "Unsigned by Apple Developer ID and not notarized; Gatekeeper was not tested.",
+    "No clean-account/install lifecycle or full macOS 12+ matrix was tested.",
+    "No real Google OAuth, YouTube upload, or complete transcription/quality test was performed.",
+    "Full dependency audit retains 11 development/build dependency findings (5 moderate, 6 high)."
+  ]
+}

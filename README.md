@@ -1,13 +1,22 @@
 # 離線字幕工廠
 
-## 0.52.1 Windows x64 pre-release：AI provider 與 YouTube 設定參考
+## 0.52.2 macOS arm64 安全更新
 
-GitHub：[v0.52.1 pre-release](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1)。本版提供 Windows x64 unsigned Setup／Portable APP；未使用 Authenticode 憑證，請先核對 Release 附帶的 SHA-256。這是本機封裝驗證候選，不代表完整安裝後 GUI、native AX 或真實 Google／YouTube 實帳號驗收。
+GitHub：[v0.52.2 macOS arm64](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.2)。本版將 Electron 更新至 `43.8.10`，修正 eMudhra 中繼憑證安全問題（GHSA-jr5w-w6x2-84p9）；提供 macOS Apple Silicon DMG／ZIP，不含 Windows `0.52.2` 安裝檔。App 為 ad-hoc 簽章，未使用 Apple Developer ID 簽章或公證，請核對 Release 附帶的 SHA-256。正式依賴稽核為 0 項；完整稽核另有 11 項開發／建置依賴問題（5 中、6 高），詳見發布說明。
+
+先前 Windows `v0.52.1` package 使用 Electron `43.8.0`，受上述 advisory 影響；本次 macOS 更新不包含修補後的 Windows package。請勿在不可信網路下使用該舊版。
+
+- 發布說明：[RELEASE-NOTES-0.52.2.md](RELEASE-NOTES-0.52.2.md)
+- macOS arm64 DMG／ZIP 與 SHA-256：請從上方 GitHub Release 取得。
+
+## 0.52.1 Windows x64 package：AI provider 與 YouTube 設定參考
+
+GitHub：[v0.52.1](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1)。本版提供 Windows x64 unsigned Setup／Portable APP；未使用 Authenticode 憑證。此 package 使用 Electron `43.8.0`，受 GHSA-jr5w-w6x2-84p9 影響；本 repo 尚未提供修補後的 Windows package。請勿在不可信網路下使用，並核對 Release 附帶的 SHA-256。
 
 本版包含 AI provider 欄位分流、NVIDIA NIM provider，以及 YouTube 發佈視窗內的六步驟設定圖解與詳細 DOCX 參考下載。YouTube 的實際操作入口是「匯入 OAuth JSON」與「連結頻道」；請勿分享 OAuth JSON、Client Secret 或授權 token。
 
 - 發布說明：[RELEASE-NOTES-0.52.1.md](RELEASE-NOTES-0.52.1.md)
-- Windows x64 Setup／Portable 與 SHA-256：請從上方 GitHub pre-release 取得。
+- Windows x64 Setup／Portable 與 SHA-256：請從上方 GitHub Release 取得。
 
 ## 0.52.0：YouTube 私人影片與字幕上傳
 
@@ -157,7 +166,7 @@ Whisper Small 的超長字幕 cue 會在輸出前保留完整文字並依標點�
 
 ### Windows x64
 
-目前 Windows x64 測試資產請使用 [v0.52.1 pre-release](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1) 的 Setup／Portable。兩者未簽章，首次啟動可能顯示 Unknown Publisher／SmartScreen；請先核對 SHA-256 並在非關鍵環境測試。歷史 v0.52.0 發布範圍仍以其發布說明為準，未提供 Windows 資產。
+目前 Windows x64 可下載資產為 [v0.52.1](https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1) Setup／Portable，但其 Electron 43.8.0 受 GHSA-jr5w-w6x2-84p9 影響；請避免在不可信網路下使用。兩者未簽章，首次啟動可能顯示 Unknown Publisher／SmartScreen；下載後請核對 SHA-256。v0.52.2 僅提供 macOS arm64 資產。
 
 歷史 Windows 0.49.0 資產尚未使用程式碼簽章憑證，Windows 11 SmartScreen 可能顯示「未知發行者」。請先核對該 Release 所附 SHA-256，並優先在非關鍵環境完成安裝與操作確認，再由「其他資訊 → 仍要執行」啟動。
 

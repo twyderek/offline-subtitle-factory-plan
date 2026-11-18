@@ -2,15 +2,19 @@
 
 > 最後查證日期：2026-11-18
 
-> 現行版本：0.52.1（GitHub pre-release 建置與資產核對中）
-> 現行公開版本：0.51.0（GitHub Latest；macOS arm64-only）
-> 發布狀態：0.52.0 尚未公開，GitHub 仍無 `v0.52.0` tag／Release／assets。round14 個人 Windows profile 路徑 blocker 已在 source `b2b942eb6d941e61f1a5a27e065e51dd8c31e26f` 去識別；該 SHA 的完整 `npm run check`、production audit（0）、macOS arm64 candidate／checksums／runtime／signature/UI smoke，以及 exact-source Windows run `39380574427`／artifact `12244799752`／73/73 shared app hashes 均已通過各自聲明範圍。round15 對 b2b942e 判 BLOCK 的原因是 `00`／`05`／`06`／`08` 仍描述 round14 blocker 與新 SHA 驗證待完成，未同步實際結果；其原報告 `docs/project-management/reviews/2026-10-20-fr-027-v0520-github-publication-round15.md` 已保留。當前 round15 文件同步會形成新 source SHA，必須重跑該 SHA 的完整來源檢查、macOS arm64 candidate、exact-source Windows CI／hash gate 並取得 round16 無阻擋複審，才可建立 tag／Release。候選 smoke 不代表有效播放／完整轉錄；Windows artifact 僅抽取 ZIP byte range，完整 archive 未下載且 Windows preview 不屬本次公開資產。
-> 發布 tag／commit：`v0.51.0` → `53956ccdee6e16e4c0413f09312a419613b27da6`
+> 現行版本：0.52.2（macOS arm64 安全修正版建置與驗證中）
+> 現行公開版本：0.51.1（GitHub Latest；含 macOS arm64 與 Windows x64 assets）
+> 發布狀態：GitHub `v0.52.1` 已於 2026-11-18 公開 Windows x64 assets，但不是 Latest；其 Electron 43.8.0 落在官方公告 GHSA-jr5w-w6x2-84p9 影響範圍。`v0.52.2` 由該版 source tag `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立，升級 Electron 至鎖定版 43.8.10、electron-builder 至 26.18.1，目標僅為 macOS arm64；完整 `npm run check`、runtime／簽章驗證、arm64 `.app`／DMG／ZIP 建置、容器／SHA-256／updater metadata 與實際 DMG／ZIP app smoke 已通過，獨立審查、GitHub 發布與下載反向核對待完成。production dependency audit 為 0 vulnerabilities；完整 audit 有 11 項 build-time dependency findings（5 moderate／6 high），已列入 Release notes。既有 `v0.52.1` Windows assets 不會被本輪覆蓋。
+> 發布 tag／commit：`v0.51.1`（Latest）；`v0.52.2` 尚未建立
 > 主分支：`main`
 
-## 2026-11-18 v0.52.1 GitHub pre-release 建置候選
+## 2026-11-18 v0.52.2 macOS arm64 安全修正版（進行中）
 
-目前 root checkout 已將版本升至 `0.52.1`，目標 remote 為 `twyderek/offline-subtitle-factory-plan` 的目前功能分支；不切換至附件計畫所指的另一個 `offline-subtitle-factory-app` repo。Windows x64 unsigned Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`。unpacked 與 Portable renderer smoke 均 exit 0，兩者實際讀取 YouTube guide PNG／DOCX 1,670,594／1,563,905 bytes；此候選待以受控 allowlist commit、push 並建立 `v0.52.1` pre-release，尚未公開。
+從 GitHub `v0.52.1` tag 的 source commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61` 建立版本 `0.52.2`，更新 Electron 至 lockfile `43.8.10`、electron-builder 至 `26.18.1`。本輪目標為 macOS arm64 DMG／ZIP，沿用 `AUTH-2026-07-23-01` 已記錄的 ad-hoc／未公證發布授權；不變更既有 Windows `v0.52.1` assets。完整 `npm run check`、macOS runtime／簽章／容器、checksum／updater metadata 與實際 DMG／ZIP app smoke 通過；獨立審查、GitHub 發布與下載反向核對尚待完成。production audit 為 0 vulnerabilities；完整 dependency audit 有 11 項 build-time findings（5 moderate／6 high），已在 Release notes 揭露。
+
+## 2026-11-18 v0.52.1 GitHub Windows-only release
+
+GitHub `v0.52.1` 已有 Windows x64 unsigned Setup／Portable assets；該 release 不是 Latest，資產與其既有 SHA-256 維持不變。tag source 使用 Electron 43.8.0，已知落在 GHSA-jr5w-w6x2-84p9 影響範圍；本輪透過新的 macOS-only `v0.52.2` 修正版更新 Electron，未重建或替換 Windows 資產。
 
 ## 2026-11-18 FR-030 YouTube 設定參考整合與 Windows unsigned test package
 
