@@ -1,11 +1,12 @@
 # 功能測試與流程稽核
 
-## 2026-11-18 v0.52.1 GitHub pre-release package gate
+## 2026-11-18 v0.52.1 GitHub pre-release package gate and post-release verification
 
 - **版本／範圍**：root package version `0.52.1`；本輪目標是目前 origin `twyderek/offline-subtitle-factory-plan` 的 Windows x64 unsigned pre-release，未切換到附件計畫指向的另一個 repo，未建置 macOS 資產。
 - **建置結果**：`npm run electron:build:unsigned` exit 0；Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`；Release notes `2,363` bytes／SHA-256 `BAF6A4428F678AD8E3CBC0912BCB3ED17FC151348D96A8806EB1C398276912C0`；Windows executable 均 `NotSigned`。
 - **Packaged renderer 實測**：unpacked `dist/win-unpacked/離線字幕工廠.exe` 與 Portable `dist/offline-subtitle-factory-portable-0.52.1.exe` 各自以隔離 user-data 啟動，首頁、Electron bridge、設定 modal、Breeze 選擇取消、SRT upload completed／cleaned SRT、trim、AI review provider IDs、folder flow 均 exit 0；YouTube module、PNG、DOCX HTTP 讀取均 `ok=true`，bytes `1,670,594`／`1,563,905`。
-- **上傳前待核對**：需產生／核對 `SHA256SUMS-windows-x64.txt`、`latest.yml` size／SHA-512、Setup／Portable archive integrity，並於 GitHub 建立 pre-release 後核對實際 asset name、size、digest、download URL。未完成前不得宣稱發布成功。
+- **發布後核對**：GitHub release id `449596135`、tag `v0.52.1`、URL `https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1`、`draft=false`／`prerelease=true`；annotated tag target commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`。六項 assets 的 API name／size／digest／download URL 與下載後逐項 size／SHA-256 replay 全部一致；Setup／Portable 下載後 hash 與本機 build hash 一致。
+- **發布資產證據**：Setup `255,587,780` bytes／`sha256:5c312fdf9a8f652f3c26be639e508ffdae0397b51076fc529499d02ac07362bc`；Portable `254,880,396`／`sha256:3acbc7dea8122d9af7ef3f54f01d0ee41f3b832479389f7ebb498c7ee5334a93`；blockmap `267,109`；`latest.yml` `380`；SHA256SUMS `221`；signing-status `135` bytes。GitHub 直接下載核對已完成。
 - **既有限制**：Windows symlink fixture 的 `scripts/test-youtube.mjs:154` 仍可能以 `EPERM` 阻擋完整 publisher regression；未安裝 Setup，未驗證 native GUI／AX、screen reader、真實 Google OAuth／YouTube upload、正式簽章與 macOS。
 
 ## 2026-11-18 FR-030 YouTube 設定參考資產整合與 package 實測

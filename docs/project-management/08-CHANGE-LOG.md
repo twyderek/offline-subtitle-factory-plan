@@ -1,5 +1,36 @@
 # 改版與工作紀錄
 
+## 2026-11-18 — v0.52.1 GitHub pre-release 發布後資產與下載核對
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：承接本次同步 GitHub、包含已打包 APP 的發布指示；本條記錄外部發布後的實際核對結果。
+- 發布目標：`https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1`；GitHub release id `449596135`，`draft=false`、`prerelease=true`。
+- 關聯來源：commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`；annotated tag `v0.52.1` 已解析至同一 commit；branch `codex/ai-workflow-optimization` 已推送。
+- 變更等級：發布後結案核對；不覆寫既有 tag／Release，不發布 macOS 未重新建置的資產。
+- 執行前已讀：release preflight、01／05／06／09、workflows 03／04／06／07 與本次 v0.52.1 pre-release 工作條目；沿用 `AUTH-2026-07-23-01` 與本次需求方發布授權。
+- 發布授權：
+  - 是否需要：是（承接本次已授權的 root commit、branch push、`v0.52.1` tag／GitHub pre-release 與 Windows APP 資產共享）。
+  - 核准人／角色：需求提出者／產品負責人（本次對話使用者）；另引用有效常設授權 `AUTH-2026-07-23-01`。
+  - 核准時間：2026-11-18（本次同步 GitHub 指示）。
+  - 核准範圍：需求方同意本次打包 Windows unsigned APP、提交 root 修改、推送 branch、建立 `v0.52.1` GitHub pre-release 並共享 Setup／Portable／blockmap／metadata／checksum／signing-status；接受 Windows Authenticode 未簽章、未完成安裝後／native GUI／真實 Google OAuth／YouTube 上傳驗收風險，並已在 Release notes、狀態與交付文件揭露；不包含 `app/` 既有除錯檔、真實憑證、公開 macOS 資產或刪除／覆寫既有 Release。
+- 發布結果：GitHub Release 已非 draft 且為 prerelease；Release URL 為 `https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1`。六項資產均可下載，API metadata 與下載後 size／SHA-256 全數一致。
+- 實際資產核對：
+  - `offline-subtitle-factory-setup-0.52.1.exe`：`255,587,780` bytes；API／下載 digest `sha256:5c312fdf9a8f652f3c26be639e508ffdae0397b51076fc529499d02ac07362bc`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/offline-subtitle-factory-setup-0.52.1.exe)。
+  - `offline-subtitle-factory-portable-0.52.1.exe`：`254,880,396` bytes；API／下載 digest `sha256:3acbc7dea8122d9af7ef3f54f01d0ee41f3b832479389f7ebb498c7ee5334a93`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/offline-subtitle-factory-portable-0.52.1.exe)。
+  - `offline-subtitle-factory-setup-0.52.1.exe.blockmap`：`267,109` bytes；API／下載 digest `sha256:2ce95870727859e929975e0aa2f6918285e67d99101b405ccff007f507e99844`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/offline-subtitle-factory-setup-0.52.1.exe.blockmap)。
+  - `latest.yml`：`380` bytes；API／下載 digest `sha256:9bdd31cb77410e28e7b6c83cf2a53efc8c08552551add93e2e8425bcd2fadf8f`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/latest.yml)。
+  - `SHA256SUMS-windows-x64.txt`：`221` bytes；API／下載 digest `sha256:4c9743878e4ab4d364f00fb29e998e1df1be7fe1b5dc37d58ec69099064ad424`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/SHA256SUMS-windows-x64.txt)。
+  - `SIGNING-STATUS-windows-x64.txt`：`135` bytes；API／下載 digest `sha256:5989ece930c4019fd555e03030cd8c106ce46cb26bd23f0bf258283d1d1e3815`；[下載](https://github.com/twyderek/offline-subtitle-factory-plan/releases/download/v0.52.1/SIGNING-STATUS-windows-x64.txt)。
+- 下載驗證：以 `gh release download v0.52.1` 下載六項資產至獨立暫存目錄，逐項比對 GitHub API size／digest；`ALL_ASSET_MATCH=True`。Setup／Portable 下載後 hash 也與本機 dist build hash 一致。
+- 獨立審查是否執行：是；round3 為發布前本機 gate，round4 為發布後外部 Release／下載複審；原件均保留，審查代理只新增獨立報告。
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-18-v0521-github-prerelease-round4.md`
+  - 判定（逐字引用審查檔案完整結論句）：**有條件通過：v0.52.1 GitHub Windows unsigned pre-release 的 tag、資產與下載後 digest 均已核對；不代表安裝後、macOS 或真實 Google 驗收。**
+  - 條件是否已被需求方接受：是；本次需求明確要求同步修改內容與已打包 APP，發布授權明確涵蓋 Windows unsigned pre-release；未安裝後、未實帳號、symlink `EPERM` 與未簽章限制已揭露。
+- 文件結案驗證：發布後已補齊實際 commit／tag／Release URL、6 項資產名稱／大小／API digest／下載 URL 與下載後 hash；本條補齊後執行 `npm run docs:check:final`。
+- 遺留風險與後續事項：Setup 安裝／解除安裝、捷徑／SmartScreen、native GUI／AX、screen reader、真實 Google OAuth／YouTube 實帳號上傳、macOS、正式簽章與完整 `npm test` 仍未驗證；Windows symlink fixture `scripts/test-youtube.mjs:154` 的 `EPERM` 不得描述為完整 publisher regression 通過。
+
 ## 2026-11-18 — v0.52.1 GitHub pre-release 同步與 Windows unsigned APP 資產發布
 
 - 狀態：完成

@@ -9,11 +9,12 @@
 - Windows 10/11 x64；封裝由 `windows-2022` runner 執行。
 - Apple Silicon macOS 12 以上。
 
-## 2026-11-18 v0.52.1 GitHub pre-release candidate
+## 2026-11-18 v0.52.1 GitHub pre-release 發布後核對
 
 - 版本由 `0.52.0` 升為 `0.52.1`，Release notes 為 `RELEASE-NOTES-0.52.1.md`；目標為目前 origin `twyderek/offline-subtitle-factory-plan`，不切換至附件計畫中的另一個 app repo。
 - `npm run electron:build:unsigned` exit 0；Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`；三項 executable 均未簽章。
-- unpacked 與 Portable packaged renderer smoke 均通過；資產、版本與 Release notes 已進入 `dist/win-unpacked/resources/app`。上傳前仍須核對 SHA-256、`latest.yml`、GitHub asset digest／URL，並以 pre-release 方式揭露未簽章與未完成實機／真實 Google 驗收。
+- unpacked 與 Portable packaged renderer smoke 均通過；資產、版本與 Release notes 已進入 `dist/win-unpacked/resources/app`。GitHub `v0.52.1` prerelease 已發布於 `https://github.com/twyderek/offline-subtitle-factory-plan/releases/tag/v0.52.1`，tag 解析至 commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`。
+- 六項 Release assets 的 API name／size／`sha256:` digest／直接下載 URL 已核對；下載後逐項重算 size／SHA-256 全部一致。Setup `255,587,780` bytes／`5c312fdf9a8f652f3c26be639e508ffdae0397b51076fc529499d02ac07362bc`，Portable `254,880,396` bytes／`3acbc7dea8122d9af7ef3f54f01d0ee41f3b832479389f7ebb498c7ee5334a93`；本版仍為 unsigned Windows pre-release，安裝後、native GUI／AX、macOS 與真實 Google／YouTube 上傳未驗收。
 
 ## 2026-11-18 v0.52.0 本機 Windows unsigned APP candidate
 

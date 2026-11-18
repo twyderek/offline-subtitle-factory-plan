@@ -2,15 +2,15 @@
 
 > 最後查證日期：2026-11-18
 
-> 現行版本：0.52.1（GitHub pre-release 建置與資產核對中）
+> 現行版本：0.52.1（GitHub Windows x64 unsigned pre-release 已發布）
 > 現行公開版本：0.51.0（GitHub Latest；macOS arm64-only）
-> 發布狀態：0.52.0 尚未公開，GitHub 仍無 `v0.52.0` tag／Release／assets。round14 個人 Windows profile 路徑 blocker 已在 source `b2b942eb6d941e61f1a5a27e065e51dd8c31e26f` 去識別；該 SHA 的完整 `npm run check`、production audit（0）、macOS arm64 candidate／checksums／runtime／signature/UI smoke，以及 exact-source Windows run `39380574427`／artifact `12244799752`／73/73 shared app hashes 均已通過各自聲明範圍。round15 對 b2b942e 判 BLOCK 的原因是 `00`／`05`／`06`／`08` 仍描述 round14 blocker 與新 SHA 驗證待完成，未同步實際結果；其原報告 `docs/project-management/reviews/2026-10-20-fr-027-v0520-github-publication-round15.md` 已保留。當前 round15 文件同步會形成新 source SHA，必須重跑該 SHA 的完整來源檢查、macOS arm64 candidate、exact-source Windows CI／hash gate 並取得 round16 無阻擋複審，才可建立 tag／Release。候選 smoke 不代表有效播放／完整轉錄；Windows artifact 僅抽取 ZIP byte range，完整 archive 未下載且 Windows preview 不屬本次公開資產。
-> 發布 tag／commit：`v0.51.0` → `53956ccdee6e16e4c0413f09312a419613b27da6`
+> 發布狀態：GitHub `v0.52.1` 已建立為 prerelease（release id `449596135`），tag 已解析至 commit `75d01a9ecd112f998ca1765e4d1d71e75c674e61`；Setup／Portable、blockmap、`latest.yml`、SHA256 與 signing-status 六項資產的 API metadata 與下載後 size／SHA-256 均已核對一致。此版為 Windows x64 unsigned；Setup 安裝後／native GUI／真實 Google／YouTube 上傳、macOS 與完整 publisher regression 仍未驗收，symlink fixture `EPERM` 仍需揭露。
+> 發布 tag／commit：`v0.52.1` → `75d01a9ecd112f998ca1765e4d1d71e75c674e61`（GitHub prerelease；Latest 仍為 `v0.51.0`）
 > 主分支：`main`
 
 ## 2026-11-18 v0.52.1 GitHub pre-release 建置候選
 
-目前 root checkout 已將版本升至 `0.52.1`，目標 remote 為 `twyderek/offline-subtitle-factory-plan` 的目前功能分支；不切換至附件計畫所指的另一個 `offline-subtitle-factory-app` repo。Windows x64 unsigned Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`。unpacked 與 Portable renderer smoke 均 exit 0，兩者實際讀取 YouTube guide PNG／DOCX 1,670,594／1,563,905 bytes；此候選待以受控 allowlist commit、push 並建立 `v0.52.1` pre-release，尚未公開。
+目前 root checkout 已將版本升至 `0.52.1`，目標 remote 為 `twyderek/offline-subtitle-factory-plan` 的目前功能分支；不切換至附件計畫所指的另一個 `offline-subtitle-factory-app` repo。Windows x64 unsigned Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`。unpacked 與 Portable renderer smoke 均 exit 0，兩者實際讀取 YouTube guide PNG／DOCX 1,670,594／1,563,905 bytes；commit `75d01a9`、tag `v0.52.1` 與 GitHub prerelease 已完成，六項資產下載後 size／SHA-256 全部核對一致。
 
 ## 2026-11-18 FR-030 YouTube 設定參考整合與 Windows unsigned test package
 
