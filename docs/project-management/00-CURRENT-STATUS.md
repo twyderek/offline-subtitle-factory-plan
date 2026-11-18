@@ -1,12 +1,32 @@
 # 目前專案狀態
 
-> 最後查證日期：2026-10-20
+> 最後查證日期：2026-11-18
 
-> 現行版本：0.52.0（round15 發布狀態同步；新 source SHA 驗證中）
+> 現行版本：0.52.1（GitHub pre-release 建置與資產核對中）
 > 現行公開版本：0.51.0（GitHub Latest；macOS arm64-only）
 > 發布狀態：0.52.0 尚未公開，GitHub 仍無 `v0.52.0` tag／Release／assets。round14 個人 Windows profile 路徑 blocker 已在 source `b2b942eb6d941e61f1a5a27e065e51dd8c31e26f` 去識別；該 SHA 的完整 `npm run check`、production audit（0）、macOS arm64 candidate／checksums／runtime／signature/UI smoke，以及 exact-source Windows run `39380574427`／artifact `12244799752`／73/73 shared app hashes 均已通過各自聲明範圍。round15 對 b2b942e 判 BLOCK 的原因是 `00`／`05`／`06`／`08` 仍描述 round14 blocker 與新 SHA 驗證待完成，未同步實際結果；其原報告 `docs/project-management/reviews/2026-10-20-fr-027-v0520-github-publication-round15.md` 已保留。當前 round15 文件同步會形成新 source SHA，必須重跑該 SHA 的完整來源檢查、macOS arm64 candidate、exact-source Windows CI／hash gate 並取得 round16 無阻擋複審，才可建立 tag／Release。候選 smoke 不代表有效播放／完整轉錄；Windows artifact 僅抽取 ZIP byte range，完整 archive 未下載且 Windows preview 不屬本次公開資產。
 > 發布 tag／commit：`v0.51.0` → `53956ccdee6e16e4c0413f09312a419613b27da6`
 > 主分支：`main`
+
+## 2026-11-18 v0.52.1 GitHub pre-release 建置候選
+
+目前 root checkout 已將版本升至 `0.52.1`，目標 remote 為 `twyderek/offline-subtitle-factory-plan` 的目前功能分支；不切換至附件計畫所指的另一個 `offline-subtitle-factory-app` repo。Windows x64 unsigned Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`。unpacked 與 Portable renderer smoke 均 exit 0，兩者實際讀取 YouTube guide PNG／DOCX 1,670,594／1,563,905 bytes；此候選待以受控 allowlist commit、push 並建立 `v0.52.1` pre-release，尚未公開。
+
+## 2026-11-18 FR-030 YouTube 設定參考整合與 Windows unsigned test package
+
+目前 root `0.52.0` 工作樹已將需求方提供的 YouTube 六步驟 infographic 與詳細設定 DOCX 整合至 YouTube 發佈 dialog 的可收合說明區；目前版本的實際入口仍是「匯入 OAuth JSON」與「連結頻道」，不會把附件中的 OAuth 憑證或 token 納入 repo。來源與封裝內 PNG／DOCX 均已核對為非空且 bytes／SHA-256 一致。
+
+本輪重新建立本機 Windows x64 unsigned Setup、Portable 與 unpacked APP：Setup `255,585,965` bytes／SHA-256 `DAB3FF58BACEC1E2B8B3BD39BF715E34B47482868C9CEDB4D80AC93100DE07AC`；Portable `254,878,640` bytes／SHA-256 `2CB46D7C9CAA0D395C6427E1077A8F30D732890C38C456CD53299728CE92C1F4`。以 unpacked APP 實際啟動 packaged renderer，YouTube module、PNG `1,670,594` bytes 與 DOCX `1,563,905` bytes 皆 HTTP 讀取成功；Portable renderer smoke 亦通過；不安裝、不簽署、不公開發布。Focused UI／YouTube SDK、streams、lifecycle、UI CLI 測試通過；publisher 主測試仍受 Windows symlink fixture 的 `fs.symlinkSync` `EPERM` 阻擋，完整回歸不標示為通過。獨立 round2 複審為有條件通過，`npm run docs:check:final` 已 exit 0；此狀態仍不等同完整 Windows acceptance 或 release ready。
+
+## 2026-11-18 v0.52.0 本機 Windows x64 unsigned APP candidate
+
+目前 root `0.52.0` 工作樹（HEAD `9ce9c8ffeaffaed8ac4fc16f160c00dd157115a8`，仍為 dirty）已重新建立本機 Windows x64 unsigned Setup、Portable 與 unpacked APP。Setup `252,618,434` bytes、SHA-256 `8bc2656db6e65f4199aa5d9a1e35ebeff3920cc28006e95efd82c1ff1cdaefc6`；Portable `251,911,057` bytes、SHA-256 `4f5d1bddc6666b73bd3abc4622a1ad19d85c904a21c931c7dd2be65801af4990`。兩個 NSIS archive 的 NanaZip integrity、`latest.yml` version／size／SHA-512、packed runtime manifest／hashes 與主要 renderer smoke 均通過；三項 executable 均 `NotSigned`。獨立審查為有條件通過，僅支持內部 unsigned APP candidate，不代表完整 Windows acceptance 或公開 Release。
+
+這批本機產物位於 repo 外 `dist/`，沒有建立 tag／Release、沒有上傳或推送。Setup 安裝／解除安裝、捷徑／SmartScreen、native GUI／AX handle、真實 provider／API key／外部網路與完整 `npm test`（既有 Windows symlink `EPERM`）仍未覆蓋；不得將本批描述為 release ready。獨立報告：`docs/project-management/reviews/2026-11-18-v0520-windows-unsigned-build-round1.md`。
+
+## 2026-11-18 FR-029 AI provider 設定介面欄位分流
+
+本輪依附加規劃完成 root AI provider UI 優化：雲端／本機 API Key 欄位分離，Azure Deployment／API Version 僅於 Azure 顯示，切換 provider 時套用預設 Base URL 並清除不適用欄位；bootstrap、profile、save、connection 與 local discovery 均加入 provider／generation guard。Focused UI／provider 語法與 deterministic 測試、隔離 PATH core 回歸及先前本機合成 UI 畫面驗證通過；root 隔離 PATH `npm test` 的功能 suites 全部通過，僅於既有 Windows YouTube symlink fixture 受 `EPERM` 阻塞，不能宣稱完整命令 exit 0。round6 獨立審查為有條件通過；最新 round6 引用切換後 `npm run docs:check:final` exit 0。未升版、未打包、未發布；真實 API key／外部端點／字幕品質與安裝後人工流程未驗收。
 
 ## 2026-11-17 FR-028 NVIDIA NIM provider 開發驗證
 

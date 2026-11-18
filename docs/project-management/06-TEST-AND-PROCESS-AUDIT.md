@@ -1,5 +1,44 @@
 # 功能測試與流程稽核
 
+## 2026-11-18 v0.52.1 GitHub pre-release package gate
+
+- **版本／範圍**：root package version `0.52.1`；本輪目標是目前 origin `twyderek/offline-subtitle-factory-plan` 的 Windows x64 unsigned pre-release，未切換到附件計畫指向的另一個 repo，未建置 macOS 資產。
+- **建置結果**：`npm run electron:build:unsigned` exit 0；Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`；Release notes `2,363` bytes／SHA-256 `BAF6A4428F678AD8E3CBC0912BCB3ED17FC151348D96A8806EB1C398276912C0`；Windows executable 均 `NotSigned`。
+- **Packaged renderer 實測**：unpacked `dist/win-unpacked/離線字幕工廠.exe` 與 Portable `dist/offline-subtitle-factory-portable-0.52.1.exe` 各自以隔離 user-data 啟動，首頁、Electron bridge、設定 modal、Breeze 選擇取消、SRT upload completed／cleaned SRT、trim、AI review provider IDs、folder flow 均 exit 0；YouTube module、PNG、DOCX HTTP 讀取均 `ok=true`，bytes `1,670,594`／`1,563,905`。
+- **上傳前待核對**：需產生／核對 `SHA256SUMS-windows-x64.txt`、`latest.yml` size／SHA-512、Setup／Portable archive integrity，並於 GitHub 建立 pre-release 後核對實際 asset name、size、digest、download URL。未完成前不得宣稱發布成功。
+- **既有限制**：Windows symlink fixture 的 `scripts/test-youtube.mjs:154` 仍可能以 `EPERM` 阻擋完整 publisher regression；未安裝 Setup，未驗證 native GUI／AX、screen reader、真實 Google OAuth／YouTube upload、正式簽章與 macOS。
+
+## 2026-11-18 FR-030 YouTube 設定參考資產整合與 package 實測
+
+- **需求／範圍**：將需求方提供的 YouTube 一鍵發佈設定圖與詳細 DOCX 以 stable names 納入 `public/assets`，在 YouTube publish dialog 的可收合說明區提供圖解、下載連結與與現行「匯入 OAuth JSON／連結頻道」一致的操作提示；同步建立目前 `0.52.0` Windows x64 unsigned Setup／Portable／unpacked candidate。不讀取或提交真實 OAuth JSON、Client Secret、token，不安裝、不公開發布。
+- **來源與資產**：`public/assets/youtube-setup-flow.zh-TW.png` `1,670,594` bytes，SHA-256 `90A8E692E7AF84A6A7C7D58A5248E1E3D11459BF3F39CBA1AC9FF469A8567FB1`；`public/assets/youtube-setup-reference.zh-TW.docx` `1,563,905` bytes，SHA-256 `3D8462ACA5FBBDB90235B95E185CB708FA16BAE840E0A3DFDB7D0E328B8B46FE`。封裝 `dist/win-unpacked/resources/app/public/assets/` 中的相同兩檔 bytes／hash 一致；來源 DOCX 未修改，作為參考附件保存。
+- **Focused 通過**：`node --check public/youtube-publish.mjs`、`node --check scripts/verify-electron-renderer.mjs`、`node scripts/test-review-ui.mjs`、`node scripts/test-youtube-sdk.mjs`、`node scripts/test-youtube-streams.mjs`、`node scripts/test-youtube-lifecycle.mjs`、`node scripts/test-youtube-ui-cli.mjs` 均 exit 0；UI deterministic test 另驗證兩個 stable URL、下載屬性與資產非空。
+- **Windows YouTube 回歸限制**：`node scripts/test-youtube.mjs` 在既有 symlink path-boundary fixture `scripts/test-youtube.mjs:154` 的 `fs.symlinkSync` 以 `EPERM` 結束；這是 Windows 權限／Developer Mode 環境限制，不是本輪 YouTube UI 資產 assertion 失敗，故不宣稱完整 YouTube publisher suite 或 `npm test` exit 0。SDK、stream source error、lifecycle 與 UI CLI suites 已另行通過。
+- **建置與封裝**：`npm run electron:build:unsigned` exit 0。Setup `D:\Codex\subtitle-review-loop\dist\offline-subtitle-factory-setup-0.52.0.exe` `255,585,965` bytes／SHA-256 `DAB3FF58BACEC1E2B8B3BD39BF715E34B47482868C9CEDB4D80AC93100DE07AC`；Portable `D:\Codex\subtitle-review-loop\dist\offline-subtitle-factory-portable-0.52.0.exe` `254,878,640` bytes／SHA-256 `2CB46D7C9CAA0D395C6427E1077A8F30D732890C38C456CD53299728CE92C1F4`。unsigned package 未配置 code-signing certificate。
+- **Packaged renderer 實測**：`node scripts/verify-electron-renderer.mjs "D:\Codex\subtitle-review-loop\dist\win-unpacked\離線字幕工廠.exe" 9347` exit 0；首頁／Electron bridge／設定 modal／Breeze 選擇取消／SRT upload completed／trim／AI provider IDs／folder flow 通過，並額外回報 YouTube module `moduleOk=true`、`hasGuideImage=true`、`hasReferenceDocx=true`、`imageOk=true`、`docxOk=true`，實際讀取 1,670,594／1,563,905 bytes。這是封裝 renderer smoke，不是安裝後 native GUI／AX 驗收。
+- **獨立審查與文件結案**：round1 原件指出 package smoke 未點擊實際下載／screen reader；round2 schema-compliant 複審報告 `docs/project-management/reviews/2026-11-18-fr030-youtube-guide-round2.md` 判定有條件通過，無 P0／P1；`npm run docs:check:final` exit 0（19 個治理文件，最新紀錄已結案）。
+- **剩餘風險／未覆蓋**：Setup 安裝／解除安裝、捷徑／SmartScreen、native GUI／AX handle、screen reader、真實 Google OAuth／API key／外部網路、有效長音訊轉錄品質、YouTube 實帳號上傳與字幕 serving、完整 `npm test`、正式簽章／公開發布均未驗證。
+
+## 2026-11-18 v0.52.0 Windows unsigned APP 打包與實際測試
+
+- **需求／範圍**：建立目前 root `0.52.0` 的 Windows x64 unsigned Setup／Portable／unpacked candidate，確認版本、runtime、archive、metadata、SHA／簽章狀態，並實際啟動 packaged renderer；不安裝至系統、不公開發布、不輸入或保存真實 API Key。
+- **建置與封裝**：`npm run electron:build:unsigned` exit 0；unpacked 主程式版本／產品為 `0.52.0`／「離線字幕工廠」。Setup `252,618,434` bytes、SHA-256 `8bc2656db6e65f4199aa5d9a1e35ebeff3920cc28006e95efd82c1ff1cdaefc6`；Portable `251,911,057` bytes、SHA-256 `4f5d1bddc6666b73bd3abc4622a1ad19d85c904a21c931c7dd2be65801af4990`。三項 executable `Get-AuthenticodeSignature` 均為 `NotSigned`。
+- **封裝完整性**：Setup／Portable 以 NanaZip `7z t` 均 exit 0、`Everything is Ok`；`latest.yml` version `0.52.0`、Setup size `252618434` 與 Base64 SHA-512 `+joPqPRZhgKIc6P+EWAZAyfAKIHcWBXnav0g9SPxmXcYrnzn0rJFxtcGnwq4b9l8cSPZ3+S8UxxQNJMcshjABw==` 相符。packed runtime verifier 通過 FFmpeg／FFprobe／Whisper.cpp／DLL／tiny model／manifest hashes；packed app 未找到排除的 secret／certificate file pattern。
+- **Packaged renderer 實測**：`node scripts/verify-electron-renderer.mjs` 實際啟動 unpacked APP，透過 Electron DevTools／隔離 user-data 完成首頁、Electron bridge、設定 modal、Breeze 首次選擇／取消、手動 SRT upload→completed→cleaned SRT、AI review provider IDs（含 `nvidia`）、glossary round-trip、3 秒本機合成影片 trim→completed→post-trim subtitle job、folder flow，exit 0；獨立審查另以 Portable executable 重跑同範圍並通過。
+- **Focused／回歸**：`node --check public/review.js`、`node --check public/ai-provider-settings.mjs`、`node scripts/test-review-ui.mjs`、`node scripts/test-ai-providers.mjs`、隔離 PATH `node scripts/test-core.mjs`、`npm run docs:check` 與 scoped `git diff --check -- . ':(exclude)app'` 均通過。隔離 PATH `npm test`／`npm run check` 的功能 suites 通過，但在既有 `scripts/test-youtube.mjs:154` Windows `fs.symlinkSync` 以 `EPERM` 結束，故不標示完整命令 exit 0。
+- **獨立審查**：`docs/project-management/reviews/2026-11-18-v0520-windows-unsigned-build-round1.md`，判定有條件通過；報告確認本批僅能作內部 unsigned APP candidate。`docs:check:final` 待本輪工作紀錄補齊後執行。
+- **未覆蓋／剩餘風險**：Setup 安裝／解除安裝／捷徑／SmartScreen／乾淨帳號、native GUI／AX handle、有效長音訊轉錄品質、真實 provider／錯誤 key／外部網路／跨模型品質與公開發布均未驗證；dirty worktree 亦不等同 clean-source release artifact。
+
+## 2026-11-18 FR-029 AI provider 設定介面欄位分流
+
+- **需求／範圍**：驗證 `FR-029` 的 provider-specific UI 欄位分流與既有 `FR-028` NVIDIA UI 相容性；只修改 root checkout 的 `public/`、UI helper／測試與治理文件，`app/` 子目錄既有變更不在範圍。未升版、未打包、未建立 tag／Release、未使用 API Key。
+- **focused 通過**：`node --check public/review.js`、`node --check public/ai-provider-settings.mjs`、`node --check scripts/test-review-ui.mjs`、`node scripts/test-review-ui.mjs`、`node scripts/test-ai-providers.mjs` 均 exit 0。UI test 覆蓋 `data-providers`、`.provider-field.hidden`、雲端／本機 key 分流、Azure-only 欄位、NVIDIA／Ollama／LM Studio provider 判定、bootstrap／profile／save／connection／local discovery transition guard。
+- **core／完整回歸**：一般 PATH 的 core 曾因全域 Python Whisper 分支導致 mock 未產生 SRT；隔離 PATH `PATH=C:\Windows\System32;C:\Windows;C:\Program Files\nodejs` 重播 `node scripts/test-core.mjs` exit 0。root 隔離 PATH `npm test` 的全部前置 suites、provider／UI／YouTube UI CLI／core 功能 suites 均通過，posttest 於既有 `scripts/test-youtube.mjs:154` 的 Windows `fs.symlinkSync` 以 `EPERM` 結束；未繞過權限，因此完整命令仍不能標記為 exit 0。`npm run check` 同樣於該 fixture 停止；`npm run docs:check` 通過。
+- **實際 UI／可視化證據**：先前以隔離本機 server、合成 SRT 任務與本機校閱頁驗證。OpenAI-compatible／NVIDIA 顯示一般 API Key 與雲端同意；Ollama 顯示「本機 API Key（可留空）」、loopback 預設 URL、批次 8 且同意停用；Azure 顯示 Deployment／API Version 並隱藏本機 key；NVIDIA 顯示 `https://integrate.api.nvidia.com/v1`。合成影片無效只造成波形錯誤提示，測試資料已清理；round5 未重新執行人工 GUI／AX。
+- **獨立審查**：round1 至 round6 報告均保留於 `docs/project-management/reviews/2026-11-18-fr-029-ai-provider-ui-round<N>.md`。round1–round3 的阻擋發現已修正；round4–round6 有條件通過，確認 bootstrap／save／connection／discovery guard 與 deterministic cases 有效。最新 round6 的條件是 symlink 權限、真實 provider／GUI／安裝後流程仍未驗證。
+- **文件結案**：round6 schema-compliant 報告已保留於 `docs/project-management/reviews/2026-11-18-fr-029-ai-provider-ui-round6.md`；切換最新審查引用後，`npm run docs:check:final` exit 0，19 個治理文件通過，最新工作紀錄已結案。
+- **未測試／剩餘風險**：未輸入真實 key、未呼叫外部 NVIDIA／雲端端點、未驗證各 provider 真實字幕品質；Windows symlink 權限仍阻塞完整 `npm test` exit 0，LM Studio 實機、真實 GUI／AX、安裝／簽章／公證與發布均未驗收。
+
 ## 2026-11-17 FR-028 NVIDIA NIM provider 開發驗證
 
 - **需求／範圍**：root `0.52.0` checkout 新增 NVIDIA NIM OpenAI-compatible provider、設定頁選項與測試契約；`app/` 子目錄原有使用者變更不在本輪範圍，未修改。未建立 tag／Release、未上傳資產，也未把本輪結果宣稱為 macOS、真實字幕品質或完整安裝後人工驗收。

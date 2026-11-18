@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { isLoopbackAiUrl, providerProfileMatches, providerProfileSnapshot, runProviderConnectionTest, validateProviderConnectionForm } from '../public/ai-provider-settings.mjs';
+import { isLoopbackAiUrl, providerFieldIsVisible, providerProfileMatches, providerProfileSnapshot, runProviderConnectionTest, validateProviderConnectionForm } from '../public/ai-provider-settings.mjs';
 import { selectAiCues } from '../public/ai-scope.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -11,6 +11,9 @@ const html = fs.readFileSync(path.join(appDir, 'public', 'review.html'), 'utf8')
 const css = fs.readFileSync(path.join(appDir, 'public', 'styles.css'), 'utf8');
 const js = fs.readFileSync(path.join(appDir, 'public', 'review.js'), 'utf8');
 const providerFormJs = fs.readFileSync(path.join(appDir, 'public', 'ai-provider-settings.mjs'), 'utf8');
+const youtubePublishJs = fs.readFileSync(path.join(appDir, 'public', 'youtube-publish.mjs'), 'utf8');
+const youtubeGuideImage = path.join(appDir, 'public', 'assets', 'youtube-setup-flow.zh-TW.png');
+const youtubeReferenceDocx = path.join(appDir, 'public', 'assets', 'youtube-setup-reference.zh-TW.docx');
 
 assert.match(html, /id="aiToolbar" class="review-ai-toolbar collapsed"/);
 assert.match(html, /id="toggleAiToolbar"[^>]+aria-expanded="false"[^>]+aria-controls="aiToolbarContent"/);
@@ -59,6 +62,13 @@ assert.match(js, /anthropic: 'https:\/\/api\.anthropic\.com'/);
 assert.match(js, /nvidia: 'https:\/\/integrate\.api\.nvidia\.com\/v1'/);
 assert.match(html, /<option value="ollama">Ollama（本機）<\/option>/);
 assert.match(html, /<option value="lm-studio">LM Studio（本機）<\/option>/);
+assert.match(html, /class="provider-field hidden" data-providers="azure"[^>]*>[\s\S]*id="aiDeployment"/);
+assert.match(html, /class="provider-field hidden" data-providers="azure"[^>]*>[\s\S]*id="aiApiVersion"/);
+assert.match(html, /id="aiApiKey"/);
+assert.match(html, /class="provider-field full hidden" data-providers="openai openai-compatible azure groq nvidia gemini anthropic"[^>]*>[\s\S]*id="aiApiKey"/);
+assert.match(html, /class="provider-field full" data-providers="ollama lm-studio"[^>]*>[\s\S]*id="aiApiKeyLocal"/);
+assert.match(html, /本機 API Key（可留空）/);
+assert.match(css, /\.review-ai-settings-grid \.provider-field\.hidden \{ display: none; \}/);
 assert.match(html, /id="discoverLocalAi"/);
 assert.match(html, /id="loadAiModels"/);
 assert.match(html, /id="inspectAiModel"/);
@@ -68,10 +78,19 @@ assert.match(js, /aiDeployment'\)\.disabled = !azure/);
 assert.match(js, /aiApiVersion'\)\.disabled = !azure/);
 assert.match(providerFormJs, /請先輸入 API Key 並儲存設定/);
 assert.match(js, /ai\/key\?provider=/);
-assert.match(js, /keyInput\.dataset\.hasKey = 'false'/);
+assert.match(js, /function setAiApiKeyFields\(\{ hasApiKey = false, placeholder = '' \} = \{\}\)/);
+assert.match(js, /function applyAiProviderFieldVisibility\(provider\)/);
+assert.match(js, /providerFieldIsVisible\(field\.dataset\.providers, provider\)/);
+assert.match(js, /getAiApiKeyInput\(settings\.provider\)/);
 assert.match(html, /<script type="module" src="\/review\.js"><\/script>/);
 assert.match(js, /runProviderConnectionTest\(\{/);
 assert.match(js, /回應文字過長，正在要求 Ollama 重新輸出/);
+assert.match(youtubePublishJs, /src="\/assets\/youtube-setup-flow\.zh-TW\.png"/);
+assert.match(youtubePublishJs, /href="\/assets\/youtube-setup-reference\.zh-TW\.docx" download/);
+assert.match(youtubePublishJs, /目前版本請直接在本視窗使用「匯入 OAuth JSON」與「連結頻道」/);
+assert.match(fs.readFileSync(path.join(appDir, 'public', 'styles.css'), 'utf8'), /\.review-youtube-guide img/);
+assert.ok(fs.statSync(youtubeGuideImage).size > 0, 'YouTube 設定圖解必須是非空檔案');
+assert.ok(fs.statSync(youtubeReferenceDocx).size > 0, 'YouTube 詳細設定 DOCX 必須是非空檔案');
 
 const savedGroq = providerProfileSnapshot({ provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1/', model: 'llama-3.3-70b-versatile' });
 assert.equal(providerProfileMatches(savedGroq, { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' }), true, '相同 Groq profile 應允許測試');
@@ -90,6 +109,10 @@ const savedOllama = providerProfileSnapshot({ provider: 'ollama', baseUrl: 'http
 assert.equal(validateProviderConnectionForm(savedOllama, { ...savedOllama, apiKey: '' }, false), '', 'loopback 本機服務不應強制 API Key');
 assert.equal(isLoopbackAiUrl('http://[::1]:1234/v1'), true, 'UI 應辨識 IPv6 loopback');
 assert.equal(isLoopbackAiUrl('http://localhost.example.com/v1'), false, 'UI 不可把 localhost 子網域誤認為本機');
+assert.equal(providerFieldIsVisible('openai openai-compatible azure groq nvidia gemini anthropic', 'nvidia'), true, 'NVIDIA 應顯示雲端 API Key 欄位');
+assert.equal(providerFieldIsVisible('openai openai-compatible azure groq nvidia gemini anthropic', 'ollama'), false, 'Ollama 不應顯示雲端 API Key 欄位');
+assert.equal(providerFieldIsVisible('ollama,lm-studio', 'lm-studio'), true, 'LM Studio 應顯示本機 API Key 欄位');
+assert.equal(providerFieldIsVisible('azure', 'groq'), false, '非 Azure 不應顯示 Azure 專用欄位');
 
 async function exerciseConnectionController({ savedProfile = savedGroq, currentSettings = { ...savedGroq, apiKey: '' }, hasSavedKey = true, response = { ok: true, status: 200, body: { ok: true, modelAvailable: true } } } = {}) {
   const button = { disabled: false };
@@ -154,9 +177,318 @@ assert.match(thrownStatuses.at(-1), /network down/, '連線 fetch 例外應顯�
 // Execute the actual UI functions: a status GET begun before cancellation may
 // return its old 'running' snapshot after the cancel POST has completed.
 function uiFunctionSource(name) {
-  const match = js.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
+  const match = js.match(new RegExp(`(?:async )?function ${name}\\(`));
   assert.ok(match, `missing executable UI function ${name}`);
-  return match[0];
+  let depth = 0;
+  let parenDepth = 0;
+  let bodyStarted = false;
+  let quote = '';
+  let escaped = false;
+  for (let index = match.index; index < js.length; index += 1) {
+    const character = js[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+      continue;
+    }
+    if (!bodyStarted) {
+      if (character === '(') parenDepth += 1;
+      else if (character === ')') parenDepth -= 1;
+      else if (character === '{' && parenDepth === 0) {
+        bodyStarted = true;
+        depth = 1;
+      }
+      continue;
+    }
+    if (character === '{') depth += 1;
+    if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return js.slice(match.index, index + 1);
+    }
+  }
+  assert.fail(`unterminated executable UI function ${name}`);
+}
+
+// A slow profile response from a previous provider must not restore stale
+// fields, and save/test controls must remain fail-closed during the switch.
+{
+  const controls = {
+    aiProvider: { value: 'openai-compatible' },
+    aiBaseUrl: { value: 'https://legacy.example/v1' },
+    aiModel: { value: 'legacy-model' },
+    aiDeployment: { value: 'legacy-deployment', disabled: false },
+    aiApiVersion: { value: 'legacy-version', disabled: false },
+    aiBatchSize: { value: '30' },
+    aiApiKey: { value: 'legacy-cloud-key', dataset: { hasKey: 'true' }, placeholder: '' },
+    aiApiKeyLocal: { value: 'legacy-local-key', dataset: { hasKey: 'true' }, placeholder: '' },
+    aiPrivacyStatus: { textContent: '' },
+    aiConsent: { disabled: false },
+    clearAiKey: { disabled: false },
+    saveAiSettings: { disabled: false },
+    testAiConnection: { disabled: false },
+    loadAiModels: { disabled: false },
+    inspectAiModel: { disabled: false },
+    aiSettingsStatus: { textContent: '' },
+  };
+  const requests = [];
+  const statuses = [];
+  const context = vm.createContext({
+    state: {
+      aiProviderProfileGeneration: 0,
+      aiProviderProfilePending: false,
+      aiProviderProfileReady: true,
+      aiProviderProfileSnapshot: null,
+    },
+    LOCAL_AI_PROVIDERS: new Set(['ollama', 'lm-studio']),
+    VALID_AI_PROVIDERS: ['openai-compatible', 'nvidia', 'azure'],
+    API_BASE: '',
+    document: { getElementById: (id) => controls[id], querySelectorAll: () => [] },
+    providerFieldIsVisible: () => true,
+    isLoopbackAiUrl: () => false,
+    providerProfileSnapshot: (value) => ({
+      provider: value.provider,
+      baseUrl: value.baseUrl,
+      model: value.model,
+      deployment: value.deployment || '',
+      apiVersion: value.apiVersion || '',
+    }),
+    setAiSettingsStatus: (message) => statuses.push(message),
+    fetch: (url) => new Promise((resolve, reject) => requests.push({ url: String(url), resolve, reject })),
+  });
+  vm.runInContext([
+    'getAiApiKeyInput',
+    'setAiApiKeyFields',
+    'updateAiPrivacyStatus',
+    'applyAiProviderFieldVisibility',
+    'setAiProviderProfileState',
+    'isCurrentAiProviderProfileRequest',
+    'loadAiProviderProfile',
+    'collectAiSettings',
+    'saveAiSettings',
+  ].map(uiFunctionSource).join('\n'), context);
+
+  const staleLoad = context.loadAiProviderProfile();
+  controls.aiProvider.value = 'nvidia';
+  const currentLoad = context.loadAiProviderProfile();
+  assert.equal(controls.aiApiKey.value, '', '切換 provider 必須同步清空雲端 API Key');
+  assert.equal(controls.aiApiKeyLocal.value, '', '切換 provider 必須同步清空本機 API Key');
+  assert.equal(controls.aiDeployment.value, '', '切換 provider 必須同步清空 Azure deployment');
+  assert.equal(controls.saveAiSettings.disabled, true, 'provider 載入中不可儲存');
+  await context.saveAiSettings();
+  assert.match(statuses.at(-1), /尚未載入完成/, 'provider 載入中儲存應 fail-closed');
+
+  const currentRequest = requests.find((request) => request.url.includes('provider=nvidia'));
+  const staleRequest = requests.find((request) => request.url.includes('provider=openai-compatible'));
+  assert.ok(currentRequest && staleRequest, '兩次 provider profile 請求都應建立');
+  currentRequest.resolve({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, profile: { baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/test' }, hasApiKey: false, capabilities: { jsonSchema: false, modelList: true } }),
+  });
+  await currentLoad;
+  staleRequest.resolve({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, profile: { baseUrl: 'https://legacy.example/v1', model: 'legacy-model' }, hasApiKey: true, capabilities: { jsonSchema: true, modelList: true } }),
+  });
+  await staleLoad;
+  assert.equal(controls.aiBaseUrl.value, 'https://integrate.api.nvidia.com/v1', '舊 provider 回應不可覆寫目前 Base URL');
+  assert.equal(controls.aiModel.value, 'nvidia/test', '舊 provider 回應不可覆寫目前模型');
+  assert.equal(context.state.aiProviderProfileSnapshot.provider, 'nvidia', 'snapshot 必須屬於目前 provider');
+  assert.equal(context.state.aiProviderProfileReady, true, '目前 provider 成功後才可解鎖設定');
+
+  controls.aiProvider.value = 'azure';
+  const failedLoad = context.loadAiProviderProfile();
+  assert.equal(controls.saveAiSettings.disabled, true, 'provider 載入失敗前不可儲存');
+  const failedRequest = requests.find((request) => request.url.includes('provider=azure'));
+  failedRequest.reject(new Error('profile unavailable'));
+  await failedLoad;
+  assert.equal(context.state.aiProviderProfileReady, false, 'provider 載入失敗必須維持 fail-closed');
+  assert.equal(context.state.aiProviderProfileSnapshot, null, 'provider 載入失敗不可保留舊 snapshot');
+  assert.equal(controls.aiApiKey.value, '', 'provider 載入失敗不可保留舊雲端 API Key');
+  assert.match(statuses.at(-1), /供應商載入失敗：profile unavailable/, 'provider 載入失敗應顯示診斷訊息');
+}
+
+// The bootstrap settings GET can race the first manual provider switch; its
+// stale response must not recreate the old provider profile or ready state.
+{
+  const controls = { aiProvider: { value: 'openai-compatible' } };
+  const statuses = [];
+  let resolveSettings;
+  let applied = false;
+  const context = vm.createContext({
+    state: { aiProviderProfileGeneration: 0, aiProviderProfilePending: true, aiProviderProfileReady: false },
+    API_BASE: '',
+    document: { getElementById: (id) => controls[id] },
+    fetch: () => new Promise((resolve) => { resolveSettings = resolve; }),
+    applyAiSettings: () => { applied = true; },
+    setAiSettingsStatus: (message) => statuses.push(message),
+  });
+  vm.runInContext(['isCurrentAiProviderProfileRequest', 'loadAiSettings'].map(uiFunctionSource).join('\n'), context);
+  const loading = context.loadAiSettings();
+  controls.aiProvider.value = 'nvidia';
+  context.state.aiProviderProfileGeneration = 1;
+  context.state.aiProviderProfilePending = true;
+  context.state.aiProviderProfileReady = false;
+  resolveSettings({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, settings: { provider: 'openai-compatible', baseUrl: 'https://legacy.example/v1', model: 'legacy-model' } }),
+  });
+  await loading;
+  assert.equal(applied, false, '過期 bootstrap settings 不可套用舊 provider');
+  assert.equal(context.state.aiProviderProfilePending, true, '過期 bootstrap settings 不可解除目前 pending 狀態');
+  assert.equal(context.state.aiProviderProfileReady, false, '過期 bootstrap settings 不可重建 ready 狀態');
+}
+
+// A save already in flight must not apply its old provider response or unlock
+// the controls after a newer provider transition has entered pending state.
+{
+  const controls = {
+    saveAiSettings: { disabled: false },
+    aiEnabled: { checked: false },
+    aiProvider: { value: 'nvidia' },
+    aiBaseUrl: { value: 'https://integrate.api.nvidia.com/v1' },
+    aiModel: { value: 'nvidia/test' },
+    aiDeployment: { value: '' },
+    aiApiVersion: { value: '' },
+    aiBatchSize: { value: '30' },
+    aiApiKey: { value: '', dataset: { hasKey: 'true' } },
+    aiApiKeyLocal: { value: '', dataset: { hasKey: 'false' } },
+    aiTimeoutSeconds: { value: '60' },
+    aiMaxRetries: { value: '3' },
+    aiRetryBaseMs: { value: '1000' },
+    aiInstructions: { value: '' },
+    aiConsent: { checked: true },
+  };
+  const statuses = [];
+  let resolveProject;
+  let resolveSettings;
+  let appliedProvider = '';
+  const context = vm.createContext({
+    state: { aiProviderProfileGeneration: 1, aiProviderProfilePending: false, aiProviderProfileReady: true },
+    LOCAL_AI_PROVIDERS: new Set(['ollama', 'lm-studio']),
+    API_BASE: '',
+    document: { getElementById: (id) => controls[id] },
+    window: { electronAPI: null },
+    isLoopbackAiUrl: () => false,
+    getAiLanguage: () => 'zh-TW',
+    saveAiProjectSettings: () => new Promise((resolve) => { resolveProject = resolve; }),
+    setAiSettingsStatus: (message) => statuses.push(message),
+    applyAiSettings: (settings) => { appliedProvider = settings.provider; },
+    fetch: () => new Promise((resolve) => { resolveSettings = resolve; }),
+  });
+  vm.runInContext([
+    'getAiApiKeyInput',
+    'collectAiSettings',
+    'isCurrentAiProviderProfileRequest',
+    'saveAiSettings',
+  ].map(uiFunctionSource).join('\n'), context);
+  assert.equal(context.isCurrentAiProviderProfileRequest('nvidia', 1), true, 'save test should begin on current provider generation');
+  const saving = context.saveAiSettings();
+  await new Promise(setImmediate);
+  assert.equal(typeof resolveProject, 'function', 'save should enter the project settings request');
+  resolveProject();
+  await new Promise(setImmediate);
+  assert.equal(typeof resolveSettings, 'function', 'save should enter the provider settings request');
+  controls.aiProvider.value = 'azure';
+  context.state.aiProviderProfileGeneration = 2;
+  context.state.aiProviderProfilePending = true;
+  context.state.aiProviderProfileReady = false;
+  controls.saveAiSettings.disabled = true;
+  resolveSettings({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, settings: { provider: 'nvidia', baseUrl: controls.aiBaseUrl.value, model: controls.aiModel.value } }),
+  });
+  await saving;
+  assert.equal(appliedProvider, '', '過期的 save response 不可套用舊 provider');
+  assert.equal(controls.saveAiSettings.disabled, true, '過期的 save finally 不可解除目前 transition 鎖定');
+  assert.equal(context.state.aiProviderProfilePending, true, '過期的 save 不可改寫目前 pending 狀態');
+}
+
+// Connection tests must also stay fail-closed during pending/failed profile
+// states, and a response from an obsolete connection request must not unlock.
+{
+  const controls = { testAiConnection: { disabled: true } };
+  const statuses = [];
+  const context = vm.createContext({
+    state: { aiProviderProfilePending: true, aiProviderProfileReady: false },
+    document: { getElementById: (id) => controls[id] },
+    setAiSettingsStatus: (message) => statuses.push(message),
+  });
+  vm.runInContext(uiFunctionSource('testAiConnection'), context);
+  await context.testAiConnection();
+  assert.match(statuses.at(-1), /尚未載入完成/, 'pending profile 不可測試連線');
+  context.state.aiProviderProfilePending = false;
+  await context.testAiConnection();
+  assert.match(statuses.at(-1), /尚未載入完成/, 'failed profile 不可測試連線');
+
+  let release;
+  let current = true;
+  const button = { disabled: false };
+  const connectionStatuses = [];
+  const connection = runProviderConnectionTest({
+    button,
+    savedProfile: savedGroq,
+    currentSettings: { ...savedGroq, apiKey: '' },
+    hasSavedKey: true,
+    request: () => new Promise((resolve) => { release = resolve; }),
+    setStatus: (message) => connectionStatuses.push(message),
+    isCurrent: () => current,
+  });
+  await new Promise(setImmediate);
+  current = false;
+  release({ ok: true, status: 200, json: async () => ({ ok: true, modelAvailable: true }) });
+  await connection;
+  assert.equal(button.disabled, true, '過期 connection response 不可解除目前 transition 鎖定');
+  assert.equal(connectionStatuses.at(-1), '正在測試 AI 服務…', '過期 connection response 不可更新成功／失敗狀態');
+}
+
+// Local discovery must use the same provider transition path before applying
+// discovered endpoint/model values.
+{
+  const controls = {
+    discoverLocalAi: { disabled: false },
+    aiProvider: { value: 'nvidia' },
+    aiBaseUrl: { value: 'https://integrate.api.nvidia.com/v1' },
+    aiModel: { value: '' },
+    aiBatchSize: { value: '30' },
+  };
+  const statuses = [];
+  let resolveProfile;
+  let profileLoads = 0;
+  const context = vm.createContext({
+    state: { aiProviderProfileGeneration: 0, aiProviderProfileReady: false },
+    API_BASE: '',
+    document: { getElementById: (id) => controls[id] },
+    setAiSettingsStatus: (message) => statuses.push(message),
+    showAiModels: () => {},
+    updateAiPrivacyStatus: () => {},
+    isCurrentAiProviderProfileRequest: (provider, generation) => controls.aiProvider.value === provider && context.state.aiProviderProfileGeneration === generation,
+    loadAiProviderProfile: () => {
+      profileLoads += 1;
+      context.state.aiProviderProfileGeneration = 1;
+      return new Promise((resolve) => { resolveProfile = resolve; });
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ ok: true, services: [{ available: true, provider: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1', models: ['qwen-local'], label: 'Ollama' }] }) }),
+  });
+  vm.runInContext(uiFunctionSource('discoverLocalAi'), context);
+  const discovery = context.discoverLocalAi();
+  await new Promise(setImmediate);
+  assert.equal(profileLoads, 1, 'local discovery 必須走 provider profile transition');
+  context.state.aiProviderProfileReady = true;
+  resolveProfile();
+  await discovery;
+  assert.equal(controls.aiProvider.value, 'ollama', 'local discovery 應設定目前 provider');
+  assert.equal(controls.aiBaseUrl.value, 'http://127.0.0.1:11434/v1', 'local discovery 應套用發現的 endpoint');
+  assert.equal(controls.aiModel.value, 'qwen-local', 'local discovery 應套用第一個模型');
+  assert.equal(controls.aiBatchSize.value, 8, 'local discovery 應套用本機 batch size');
 }
 async function exerciseCancellationRace({ retryable, cancelOk = true }) {
   const controls = {

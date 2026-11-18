@@ -233,6 +233,30 @@ try {
     })()`,
   });
 
+  const youtubeGuideAssets = await client.call('Runtime.evaluate', {
+    awaitPromise: true,
+    returnByValue: true,
+    expression: `(async () => {
+      const moduleResponse = await fetch('/youtube-publish.mjs');
+      const moduleText = await moduleResponse.text();
+      const [imageResponse, docxResponse] = await Promise.all([
+        fetch('/assets/youtube-setup-flow.zh-TW.png'),
+        fetch('/assets/youtube-setup-reference.zh-TW.docx'),
+      ]);
+      const imageBytes = imageResponse.ok ? (await imageResponse.arrayBuffer()).byteLength : 0;
+      const docxBytes = docxResponse.ok ? (await docxResponse.arrayBuffer()).byteLength : 0;
+      return {
+        moduleOk: moduleResponse.ok,
+        hasGuideImage: moduleText.includes('/assets/youtube-setup-flow.zh-TW.png'),
+        hasReferenceDocx: moduleText.includes('/assets/youtube-setup-reference.zh-TW.docx'),
+        imageOk: imageResponse.ok,
+        docxOk: docxResponse.ok,
+        imageBytes,
+        docxBytes,
+      };
+    })()`,
+  });
+
   const rendererJobId = evaluateValue(uploadFlow)?.jobId;
   if (!rendererJobId) throw new Error('Renderer upload flow did not return a job ID');
   const aiReviewAssets = await client.call('Runtime.evaluate', {
@@ -338,6 +362,7 @@ try {
     breezeSelectionFlow: evaluateValue(breezeSelectionFlow),
     uploadFlow: evaluateValue(uploadFlow),
     trimAssets: evaluateValue(trimAssets),
+    youtubeGuideAssets: evaluateValue(youtubeGuideAssets),
     aiReviewAssets: evaluateValue(aiReviewAssets),
     packagedTrimFlow: evaluateValue(packagedTrimFlow),
     folderIconFlow: evaluateValue(folderIconFlow),
@@ -364,6 +389,7 @@ try {
   if (result.uploadFlow.finalStatus !== 'completed') throw new Error(`Renderer upload job did not complete: ${result.uploadFlow.finalStatus}`);
   if (!result.uploadFlow.hasCleanedSrt) throw new Error('Renderer upload job did not produce cleaned SRT');
   if (!result.trimAssets.pageOk || !result.trimAssets.scriptOk || !result.trimAssets.hasWorkspace || !result.trimAssets.hasStartJob) throw new Error('Packaged trim workspace assets are missing');
+  if (!result.youtubeGuideAssets.moduleOk || !result.youtubeGuideAssets.hasGuideImage || !result.youtubeGuideAssets.hasReferenceDocx || !result.youtubeGuideAssets.imageOk || !result.youtubeGuideAssets.docxOk || result.youtubeGuideAssets.imageBytes <= 0 || result.youtubeGuideAssets.docxBytes <= 0) throw new Error('Packaged YouTube setup guide assets are missing or empty');
   if (!result.aiReviewAssets.pageOk || result.aiReviewAssets.saveStatus !== 200) throw new Error('Packaged AI review settings API is unavailable');
   if (!result.aiReviewAssets.hasSelectionUi || !result.aiReviewAssets.hasSessionUi || !result.aiReviewAssets.hasSecureKeyUi) throw new Error('Packaged 0.45 AI review controls are missing');
   if (!result.aiReviewAssets.hasCollapsibleAiUi) throw new Error('Packaged 0.45.1 collapsible AI toolbar is missing');

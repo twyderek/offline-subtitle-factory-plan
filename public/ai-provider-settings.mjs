@@ -26,6 +26,11 @@ export function isLoopbackAiUrl(value) {
   }
 }
 
+export function providerFieldIsVisible(dataProviders, provider) {
+  const allowedProviders = String(dataProviders || '').split(/[\s,]+/).filter(Boolean);
+  return allowedProviders.includes(String(provider || '').trim());
+}
+
 export function validateProviderConnectionForm(saved, current, hasSavedKey) {
   const profile = providerProfileSnapshot(current);
   if (!profile.baseUrl) return '請先填寫 API Base URL 並儲存設定';
@@ -36,7 +41,7 @@ export function validateProviderConnectionForm(saved, current, hasSavedKey) {
   return '';
 }
 
-export async function runProviderConnectionTest({ button, savedProfile, currentSettings, hasSavedKey, request, setStatus }) {
+export async function runProviderConnectionTest({ button, savedProfile, currentSettings, hasSavedKey, request, setStatus, isCurrent = () => true }) {
   button.disabled = true;
   setStatus('正在測試 AI 服務…');
   try {
@@ -44,14 +49,15 @@ export async function runProviderConnectionTest({ button, savedProfile, currentS
     if (validationError) throw new Error(validationError);
     const response = await request();
     const result = await response.json();
+    if (!isCurrent()) return null;
     if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
     const modelMessage = result.modelAvailable ? '指定模型可用' : '已連線，但模型清單中找不到指定模型';
     setStatus(`連線成功：${modelMessage}`);
     return result;
   } catch (error) {
-    setStatus(`連線失敗：${error.message}`);
+    if (isCurrent()) setStatus(`連線失敗：${error.message}`);
     return null;
   } finally {
-    button.disabled = false;
+    if (isCurrent()) button.disabled = false;
   }
 }

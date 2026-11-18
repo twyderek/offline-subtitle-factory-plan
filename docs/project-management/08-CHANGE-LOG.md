@@ -1,5 +1,105 @@
 # 改版與工作紀錄
 
+## 2026-11-18 — v0.52.1 GitHub pre-release 同步與 Windows unsigned APP 資產發布
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：需求方要求將本次修改內容同步到 GitHub，並包含已打包好的 APP。
+- 發布目標：目前 checkout 的 `origin`（`https://github.com/twyderek/offline-subtitle-factory-plan.git`）；目前工作樹版本為 `0.52.0`，依發布計畫採 patch 版本 `0.52.1`，重新建立與版本一致的 Windows x64 unsigned Setup／Portable／unpacked package。
+- 關聯需求／缺陷：FR-028、FR-029、FR-030、FR-027、NFR-002、NFR-006、NFR-007、NFR-008。
+- 變更等級：發布；預計建立 GitHub `v0.52.1` pre-release，不覆寫既有 tag／Release，不發布 macOS 未重新建置的資產。
+- 執行前已讀：release preflight、01／05／06／09、workflows 03／04／06／07、最新 08 條目與目前 origin 狀態；已確認 repo 與附件計畫中的 `offline-subtitle-factory-app` 不同，本輪不臆測切換到另一個 repo。
+- 發布授權：
+  - 是否需要：是（提交本次 root 修改、推送目前 branch、建立 `v0.52.1` GitHub pre-release 並上傳 Windows unsigned Setup／Portable、`latest.yml`、blockmap、SHA-256 與 signing-status 資產）。
+  - 核准人／角色：需求提出者／產品負責人（本次對話使用者）；另引用有效常設授權 `AUTH-2026-07-23-01`。
+  - 核准時間：2026-11-18（本次同步 GitHub 指示）。
+  - 核准範圍：需求方同意本次打包 Windows unsigned APP、提交 root 修改、推送目前 branch、建立 GitHub `v0.52.1` pre-release 並共享 Setup／Portable／metadata／checksum／signing-status 資產；接受 Windows Authenticode 未簽章與未完成安裝後／native GUI／真實 Google OAuth 上傳驗收的 pre-release 風險，並要求在 Release notes、狀態與交付說明揭露；不包含 `app/` 下既有除錯檔、真實憑證、公開 macOS 資產或刪除／覆寫既有 Release。
+- 目標與成功條件：版本／package／Release tag 一致；root 受控修改與 Release notes 可追溯；Setup／Portable／unpacked 重新建置並以 renderer smoke 驗證；上傳後核對 GitHub asset 名稱、大小、digest、下載 URL、`latest.yml` 與 SHA-256。
+- 可執行計畫：1. 升版至 0.52.1 並建立 release notes；2. 同步 README／05／00／06／08 的發布範圍與風險；3. 執行 docs／focused／必要回歸與 unsigned build；4. 以明確 allowlist commit 並 push 目前 branch；5. 建立 `v0.52.1` pre-release、上傳 Windows 資產；6. 下載／API 核對資產後完成 final docs gate 與發布紀錄。
+- 停止條件與回復：版本／SHA／資產／metadata／下載 digest 不一致、測試／獨立審查失敗、機密進入 staged diff、或 GitHub 操作超出上述 repo／資產範圍時停止，不刪除既有 Release；發布錯誤以新的 patch Release 修正，不靜默覆寫。
+- 本機建置驗證：`npm run electron:build:unsigned` exit 0；Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`；blockmap `267,109` bytes；`latest.yml` version／size／SHA-512 matched；`SHA256SUMS-windows-x64.txt` 與 unsigned signing status 已產生。NanaZip archive integrity、runtime verifier、unpacked／Portable packaged renderer smoke 均通過。
+- 測試邊界：docs／AI provider／review UI／YouTube SDK／streams／lifecycle／UI CLI、隔離 PATH core 均通過；一般 PATH core 曾受全域 Python 造成 mock 分支漂移，隔離 PATH 已 exit 0。`npm test` 的所有前置 suites 通過，但 posttest 的 `scripts/test-youtube.mjs:154` Windows symlink fixture 以 `EPERM` 結束，故不宣稱完整命令 exit 0。
+- 獨立審查是否執行：是；round1／round2 原件保留，round3 將作為本地 pre-release gate 的最新格式複審；審查代理只新增獨立報告，不修改 root 或 `app/`。
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-18-v0521-github-prerelease-round3.md`
+  - 判定（逐字引用審查檔案完整結論句）：**有條件通過：v0.52.1 Windows unsigned pre-release 的來源、封裝與本機 smoke 證據足夠；不代表完整 Windows 安裝後、macOS 或真實 Google 驗收。**
+  - 條件是否已被需求方接受：是；本次需求明確要求同步修改內容與已打包 APP，且常設授權 `AUTH-2026-07-23-01` 涵蓋未簽章發布；未安裝後、未實帳號與未簽章限制已在 Release notes、README、00／05／06／08 揭露。
+- 文件結案驗證：本地 pre-release gate 補齊 round3 reference 後執行 `npm run docs:check:final`；外部 commit／push／tag／GitHub asset upload 仍須在後續發布步驟記錄實際結果。
+- 發布前狀態：本地 pre-release gate 已結案；尚未 commit、push、建立 tag／GitHub Release 或上傳資產，外部同步完成前不得宣稱已發布。
+
+## 2026-11-18 — FR-030 YouTube 設定參考圖解與 DOCX 整合、unsigned APP 實測
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：需求方要求把提供的 YouTube 一鍵發佈設定流程 infographic 加入 YouTube 發佈說明，提供詳細設定參考 DOCX，並打包一個版本 APP 實際測試。
+- 關聯需求／缺陷：FR-030（YouTube 發佈設定參考資產）、FR-027（YouTube 私人上傳 MVP）、FR-012、NFR-002、NFR-006、NFR-007。
+- 變更等級：開發／文件／UI／本機封裝測試；不等同公開發布。
+- 執行前已讀：`npm run project:preflight -- --type=development`、固定核心與 development route；附件 PNG／DOCX 已視為參考資料，不作為軟體指令；既有 `app/` 與 root 工作樹變更均保留。
+- 目標與成功條件：YouTube publish dialog 顯示可收合六步驟 PNG、提供 DOCX 與圖解下載；資產以 stable names 隨 package 進入；不納入 OAuth JSON／Client Secret／token；來源 assertion、package renderer smoke、文件與獨立審查完成。
+- 不在範圍：不自動建立 Google Cloud/OAuth、不讀取或提交使用者憑證、不改 YouTube upload backend、不安裝、不簽署、不公開發布、不建立 tag／Release／上傳。
+- 實際修改：新增 `public/assets/youtube-setup-flow.zh-TW.png` 與 `public/assets/youtube-setup-reference.zh-TW.docx`；更新 `public/youtube-publish.mjs` 說明區與下載連結、`public/styles.css` 圖片／附件樣式、`scripts/test-review-ui.mjs` stable URL／非空 assertion、`scripts/verify-electron-renderer.mjs` packaged asset HTTP bytes assertion；同步 02／03／06 文件。未修改附件原件或既有 `app/` 變更。
+- 資產核對：PNG `1,670,594` bytes／SHA-256 `90A8E692E7AF84A6A7C7D58A5248E1E3D11459BF3F39CBA1AC9FF469A8567FB1`；DOCX `1,563,905` bytes／SHA-256 `3D8462ACA5FBBDB90235B95E185CB708FA16BAE840E0A3DFDB7D0E328B8B46FE`；source 與 unpacked package bytes／hash 一致。
+- 開發驗證結果：`node --check public/youtube-publish.mjs`、`node --check scripts/verify-electron-renderer.mjs`、`node scripts/test-review-ui.mjs`、YouTube SDK／streams／lifecycle／UI CLI focused suites、`git diff --check`、`npm run docs:check` 均 exit 0。`node scripts/test-youtube.mjs` 在既有 Windows `fs.symlinkSync` fixture（line 154）以 `EPERM` 結束，故不宣稱完整 publisher regression／`npm test` exit 0。
+- APP 封裝與實際測試：`npm run electron:build:unsigned` exit 0。Setup `255,585,965` bytes／SHA-256 `DAB3FF58BACEC1E2B8B3BD39BF715E34B47482868C9CEDB4D80AC93100DE07AC`；Portable `254,878,640` bytes／SHA-256 `2CB46D7C9CAA0D395C6427E1077A8F30D732890C38C456CD53299728CE92C1F4`。unpacked 與 Portable executable 的 packaged renderer smoke 均 exit 0，實際讀取 YouTube module、PNG、DOCX HTTP 資產及 1,670,594／1,563,905 bytes；其他首頁、Electron bridge、設定 modal、SRT upload completed、trim、AI review、folder flow 亦通過。
+- 獨立審查是否執行：是；round1 原件及 round2 格式複審均僅由獨立唯讀 reviewer 新增，未修改其他檔案。
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-18-fr030-youtube-guide-round2.md`
+  - 判定（逐字引用審查檔案完整結論句）：**有條件通過：FR-030 與本機 unsigned package 證據足夠；不代表安裝後或真實 Google 驗收。** 報告保留 packaged smoke 未點擊實際下載／screen reader、完整 publisher regression 受 Windows symlink `EPERM` 限制等邊界。
+  - 條件是否已被需求方接受：是；本次需求範圍是整合附件、建立本機 unsigned test package 並實際測試；未授權安裝後、真實 Google 或公開發布，未覆蓋項目已在本條揭露。
+- 文件結案驗證：已補上 FR-030 專屬結案條目與 round2 schema-compliant review reference；`npm run docs:check:final` exit 0，輸出「專案治理文件檢查通過：19 個文件，版本 0.52.0，最新紀錄已結案」。
+- 發布授權：本輪僅授權本機 unsigned test package 與實際測試；不執行公開發布，未建立 tag／Release、不上傳、不推送。
+- 部署／發布結果：未發布；本機資產位於 repo 外 `D:\Codex\subtitle-review-loop\dist\`，供內部測試。
+- 遺留風險與後續事項：Setup 安裝／解除安裝／捷徑／SmartScreen、native GUI／AX／screen reader、真實 Google OAuth／API key／YouTube 上傳、完整 `npm test`、正式簽章與公開發布均未驗證；若要宣稱完整 Windows acceptance，須在允許 symlink 的環境補跑並另行驗收。
+
+## 2026-11-18 — v0.52.0 Windows unsigned APP 打包與實際測試
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：需求方要求打包一個版本 APP 並實際測試；沿用 root `0.52.0`，不升版、不發布。
+- 關聯需求／缺陷：承接 FR-029 AI provider 設定介面優化及既有 FR-028 NVIDIA provider 整合。
+- 變更等級：封裝／測試；不等同對外發布。
+- 執行前已讀：`npm run project:preflight -- --type=release`、release 固定核心與 route 文件；已確認工作樹含既有 `app/` 及 root 變更，均須保留。
+- 目標與成功條件：建立 Windows x64 unsigned Setup／Portable／unpacked APP；核對版本、runtime、封裝完整性、SHA-256／metadata 與簽章狀態；執行 packaged renderer smoke 及可行的 APP GUI 實測；如實記錄未覆蓋流程。
+- 不在範圍：不建立或覆寫 tag／GitHub Release、不上傳、不推送、不安裝至系統、不輸入或保存真實 API Key、不修改既有 `app/` 子目錄變更。
+- 可執行計畫：1. 執行 unsigned build；2. 驗證 unpacked 與 Setup／Portable 資產；3. 執行 packaged renderer／GUI smoke；4. 啟動獨立只讀審查代理建立報告；5. 更新本條並執行 final docs gate。已完成。
+- 風險與回復方式：未簽章 APP 可能顯示 Unknown Publisher／SmartScreen；若 runtime、封裝、checksum、測試或審查失敗，保留證據並停止任何發布操作，不以建置成功替代實機可用。
+- 實際修改：以 `npm run electron:build:unsigned` 重新建立 `dist/win-unpacked/`、`offline-subtitle-factory-setup-0.52.0.exe`、`offline-subtitle-factory-portable-0.52.0.exe`、blockmap 與 `latest.yml`；未修改既有 `app/` 子目錄。Builder 產生的 runtime manifest 與本版封裝內容已核對。
+- 開發驗證結果：build exit 0；Setup `252,618,434` bytes／SHA-256 `8bc2656db6e65f4199aa5d9a1e35ebeff3920cc28006e95efd82c1ff1cdaefc6`；Portable `251,911,057` bytes／SHA-256 `4f5d1bddc6666b73bd3abc4622a1ad19d85c904a21c931c7dd2be65801af4990`；unpacked executable `239,627,776` bytes／版本 `0.52.0`。兩個 NSIS archive 的 NanaZip integrity 均 `Everything is Ok`；`latest.yml` version／size／SHA-512 matched；packed runtime verifier、focused provider／UI／core、docs check 與 scoped diff check 通過。三項 executable 均 `NotSigned`。
+- 實際運行結果：unpacked APP 的 packaged renderer smoke exit 0，完成設定 modal、Breeze 首次選擇取消、手動 SRT upload／completed／cleaned SRT、AI review provider IDs、glossary round-trip、3 秒本機合成影片 trim、post-trim subtitle job 與 folder flow；獨立審查另以 Portable executable 重跑同範圍並通過。可見 native GUI 程序可啟動且主視窗標題正確，但目前 Computer Use surface 回傳 `apps: []`，無法取得 native GUI／AX handle，因此不宣稱滑鼠／鍵盤 GUI 驗收完成。
+- 獨立審查是否執行：是
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-18-v0520-windows-unsigned-build-round1.md`
+  - 判定（逐字引用報告「可逐字引用的完整結論句」）：**有條件通過。本輪確認 root v0.52.0 dirty worktree 產出的 unpacked 與 Portable packaged renderer flow、Setup／Portable NanaZip integrity、runtime／version／SHA／unsigned checks 均通過，未發現封裝或 renderer 的立即阻擋 runtime defect；但 Setup 未安裝、native GUI handle／AX、安裝後／解除安裝／捷徑、真實 provider／API key、完整 npm regression（隔離 PATH 仍在 `scripts/test-youtube.mjs:154` 受 Windows symlink `EPERM` 阻塞）與 `docs:check:final` 尚未通過，因此本批只能作為內部 unsigned APP candidate，不能宣稱完整 Windows acceptance 或 release ready。**
+  - 條件是否已被需求方接受：是；本次指示範圍為本機打包與實際測試，未授權公開發布；上述未覆蓋項目於本條及交付說明明確保留，不外推為完整 Windows acceptance 或 release ready。
+- 文件結案驗證：本條補齊後執行 `npm run docs:check:final`；結果記錄於下方結案結果。
+- 發布授權：本輪不執行公開發布，故不引用公開 Release 授權；不建立 tag／Release、不上傳、不推送。
+- 部署／發布結果：未發布；本機資產僅供內部 candidate／測試，位於 repo 外 `dist/`。
+- 遺留風險與後續事項：Setup 安裝／解除安裝／捷徑／SmartScreen／乾淨帳號、native GUI／AX handle、有效長音訊轉錄品質、真實 provider／錯誤 API key／外部網路／跨模型品質與公開發布未驗證；完整隔離 PATH `npm test`／`npm run check` 仍受既有 `scripts/test-youtube.mjs:154` 的 Windows `fs.symlinkSync` `EPERM` 阻塞，若要宣稱完整 Windows acceptance，須在允許 symlink 的環境補跑並另行驗收。
+
+## 2026-11-18 — AI provider 設定介面優化與回歸測試
+
+- 狀態：完成
+- 執行者：Codex
+- 需求來源：需求方要求依附加 `CODEX_RELEASE_PLAN.md` 執行 AI provider UI 優化並進行測試；本條只將規劃中的 UI／測試範圍帶入目前 checkout，不延伸為版本發布或 GitHub Release。
+- 關聯需求／缺陷：新增 `FR-029`（AI provider 設定欄位依供應商顯示與金鑰欄位分流）；沿用 `FR-008`、`FR-009`、`FR-021`、`FR-028`、`NFR-001`、`NFR-002`、`NFR-007`。
+- 變更等級：開發／測試；不等同對外發布。
+- 執行前已讀：`npm run project:preflight -- --type=development`、`AGENTS.md`、專案管理固定核心與 development route；已核對附加規劃與目前工作樹。既有 `app/` 子目錄修改與除錯腳本全部保留，不納入本輪修改。
+- 目標與成功條件：provider 選擇後只顯示適用欄位；Azure 才顯示 Deployment／API Version；Ollama／LM Studio 使用獨立本機 API Key 欄位並提示可留空；切換 provider 時自動套用預設 Base URL、清除不適用欄位殘值；保存、清除金鑰與連線測試仍使用正確 provider namespace；補充 deterministic UI／provider 測試並執行 focused、完整回歸與文件檢查。
+- 不在範圍：不升版、不建立 Release／tag、不推送、不讀取或提交真實 API Key、不修改既有 `app/` 工作樹、不宣稱已完成完整安裝後人工驗收或真實各 provider 字幕品質驗收。
+- 可執行計畫：1. 更新需求／功能設計；2. 修改 `review.html`／`review.js`／`styles.css` 與必要的 provider UI helper；3. 補充 UI／provider contract 測試；4. 執行 focused 測試、語法／核心回歸與 `npm run check`，區分既有環境阻塞；5. 啟動獨立只讀審查代理建立多輪報告；6. 依審查結果修正、補測並完成文件結案。
+- 風險與回復方式：前端欄位分流不可改變後端 provider ID／secret namespace；本機 provider 的自訂遠端 URL 仍須依 privacy／API Key 門檻處理。若測試發現既有 `app/` 變更衝突或核心回歸失敗，停止擴張範圍並保留證據。
+- 實際修改：新增 `FR-029` 需求與功能設計；`public/review.html` 以 `data-providers` 標示 Azure、雲端 key 與本機 key 欄位；`public/styles.css` 新增 `.provider-field.hidden`；`public/ai-provider-settings.mjs` 新增 provider 欄位判定與 stale connection guard；`public/review.js` 分流兩組 API Key、以 provider／generation 收斂 bootstrap、profile、save、connection、local discovery transition，並在切換／失敗時 fail-closed；`scripts/test-review-ui.mjs` 補 provider、bootstrap、save-in-flight、connection stale response、discovery transition deterministic cases。未修改既有 `app/` 工作樹變更。
+- 開發驗證結果：根目錄 `node --check public/review.js`、`node --check public/ai-provider-settings.mjs`、`node --check scripts/test-review-ui.mjs`、`node scripts/test-review-ui.mjs`、`node scripts/test-ai-providers.mjs` 與隔離 PATH `node scripts/test-core.mjs` 均 exit 0。根目錄隔離 PATH `npm test` 的所有功能 suites（含 provider／UI／YouTube UI CLI／core）均通過，posttest 於既有 `scripts/test-youtube.mjs:154` Windows `fs.symlinkSync` 以 `EPERM` 結束；未繞過權限，因此不宣稱完整命令 exit 0。`npm run check` 同樣於該既有 symlink fixture 停止；`npm run docs:check` 通過。先前實際本機 UI 驗證確認 OpenAI-compatible／NVIDIA、Ollama、Azure 三種欄位狀態與 NVIDIA 預設 URL；未輸入或保存任何 API Key。
+- 獨立審查是否執行：是；round1／round2／round3／round4／round5／round6 均由獨立上下文建立，除各自報告外未修改 source、tests、治理文件或既有 `app/` 變更。round1–round3 的不通過發現已由後續修正；round4–round6 為有條件通過。
+- 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-18-fr-029-ai-provider-ui-round6.md`
+  - 判定（逐字引用報告「可逐字引用的完整結論句」）：**有條件通過。本輪重驗確認 FR-029 的 bootstrap／save／connection／discovery provider-generation guards、fail-closed 行為、provider-specific UI 與 namespace separation 仍正確，focused syntax／UI／provider／隔離 PATH core 及 full npm 的功能 suites 均通過；完整命令仍受 Windows symlink fixture 的 EPERM 環境限制，且 `docs:check:final` 仍因既有 round5 報告的粗體判定格式不合 validator 而 exit 1。真實 provider／GUI／部分 rejection 與 discovery 手動 intent race 未測試；修正治理報告格式並在允許 symlink 的環境取得 final gate 證據後，才可宣稱本輪整體 closeout 完成。**
+  - 條件是否已被需求方接受：是；本輪需求僅要求 root AI provider UI 優化與測試，接受 Windows symlink `EPERM` 作為環境限制，並明確不宣稱真實 provider、GUI／安裝後流程或發布驗收。
+- 文件結案驗證：已將最新審查引用切換至 schema-compliant round6，`npm run docs:check:final` exit 0（19 個治理文件，最新紀錄已結案）。
+- 發布授權：本輪未授權升版、打包、建立 tag／Release、推送、上傳或部署；若後續要求發布，須另取得明確授權並依 release workflow 重跑來源、版本、資產、checksum、簽章與下載核對。
+- 部署／發布結果：尚未發布；root 版本維持 `0.52.0`，既有 `app/` 子目錄修改未納入本輪。
+- 遺留風險與後續事項：完整 `npm test` 仍需在允許 Windows symlink 的環境取得 exit 0；真實／錯誤 API Key、外部 NVIDIA／雲端 request、各 provider 真實字幕品質、真實 GUI／AX、local discovery 與手動改選的實機 intent precedence、LM Studio 實機、安裝／簽章／公證／發布均未驗證。這些不影響本輪 FR-029 root focused／functional 開發交付，但不得外推為完整產品或發布驗收。
+
 ## 2026-11-17 — NVIDIA NIM provider 整合、驗證與 Windows unsigned build
 
 - 狀態：完成
@@ -5156,3 +5256,15 @@
 - round3 審查檔案：`docs/project-management/reviews/2026-07-28-0-47-1-release-round3.md`
 - round3 判定（逐字引用審查檔案結論句）：**本輪 round3 獨立發布複審結論為有條件通過：本地 `v0.47.1` tag／commit、macOS DMG／ZIP 完整性與 SHA、Windows artifact 展開內容／SHA／`latest.yml`，以及主要代理提供的 GitHub `isDraft=false`、7 項公開資產證據一致；在網路可達時重放 GitHub API／下載核對、收斂狀態文件，並持續揭露 Windows 未簽章、macOS 未公證、Metal／Electron／跨平台實機缺口的條件下，可以維持 v0.47.1 公開發布。**
 - round3 條件是否已被需求方接受：是
+## 2026-11-18 — YouTube 發佈設定圖解與 DOCX 參考整合
+
+- 狀態：進行中
+- 執行者：Codex
+- 需求來源：需求方要求把提供的 YouTube 一鍵發佈設定流程 infographic 加入 YouTube 發佈說明，並在 APP 中提供詳細資料設定參考 DOCX。
+- 關聯需求／缺陷：FR-012（完整操作說明）、FR-027（YouTube 私人上傳 MVP）、NFR-002、NFR-007、NFR-006。
+- 變更等級：開發／文件／UI；不等同公開發布。
+- 執行前已讀：development preflight、固定核心及 02/03/06/02-07 route；已核對附件為參考內容，並確認工作樹含既有 app/與 root 變更，均須保留。
+- 目標與成功條件：YouTube 發佈 dialog 顯示可收合的六步驟圖解；提供可下載的詳細設定參考 DOCX；附件以穩定檔名隨 public assets 進入 APP；不把 OAuth JSON／client secret／token 納入 repo；UI／asset／packaged renderer 測試通過。
+- 不在範圍：不自動建立 Google Cloud/OAuth、不讀取或提交使用者憑證、不改 YouTube upload backend、不公開發布或簽署 Release；本輪可產製本機 unsigned test package 供實際封裝驗證。
+- 可執行計畫：1. 複製附件至 public/assets 並使用 stable names；2. 更新 YouTube publish dialog/CSS；3. 補 deterministic asset/UI assertions 與 packaged renderer check；4. 更新需求／設計／稽核文件；5. 產製本機 unsigned test package 並執行 focused tests、renderer smoke、docs final gate、獨立 review。
+- 風險與回復方式：DOCX 下載依 Electron static asset；若檔案缺失／MIME／路徑錯誤或佈局超出可視範圍，停止 closeout，保留附件原件與證據，修正後重測。

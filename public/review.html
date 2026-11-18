@@ -198,10 +198,11 @@
         <label><span>服務類型</span><select id="aiProvider"><option value="ollama">Ollama（本機）</option><option value="lm-studio">LM Studio（本機）</option><option value="openai-compatible">OpenAI-compatible</option><option value="openai">OpenAI</option><option value="azure">Azure OpenAI</option><option value="groq">Groq</option><option value="nvidia">NVIDIA NIM</option><option value="gemini">Google Gemini</option><option value="anthropic">Anthropic Claude</option></select></label>
         <label class="full"><span>API Base URL</span><input id="aiBaseUrl" type="url" placeholder="https://api.openai.com/v1"></label>
         <label><span>模型</span><input id="aiModel" type="text" list="aiModelOptions" placeholder="請輸入或掃描模型名稱"><datalist id="aiModelOptions"></datalist></label>
-        <label><span>Azure Deployment</span><input id="aiDeployment" type="text" placeholder="僅 Azure 使用"></label>
-        <label><span>Azure API Version</span><input id="aiApiVersion" type="text" value="2024-12-01-preview"></label>
+        <label class="provider-field hidden" data-providers="azure"><span>Azure Deployment</span><input id="aiDeployment" type="text" placeholder="僅 Azure 使用"></label>
+        <label class="provider-field hidden" data-providers="azure"><span>Azure API Version</span><input id="aiApiVersion" type="text" value="2024-12-01-preview"></label>
         <label><span>每批段落</span><input id="aiBatchSize" type="number" min="1" max="100" value="30"></label>
-        <label class="full"><span>API Key</span><input id="aiApiKey" type="password" autocomplete="off" placeholder="留空表示沿用已保存金鑰"></label>
+        <label class="provider-field full hidden" data-providers="openai openai-compatible azure groq nvidia gemini anthropic"><span>API Key</span><input id="aiApiKey" type="password" autocomplete="off" placeholder="留空表示沿用已保存金鑰"></label>
+        <label class="provider-field full" data-providers="ollama lm-studio"><span>本機 API Key（可留空）</span><input id="aiApiKeyLocal" type="password" autocomplete="off" placeholder="本機 loopback 可留空；自訂遠端端點需輸入"></label>
         <label class="full review-ai-consent"><span><input id="aiConsent" type="checkbox"> 我了解只會傳送畫面所列的字幕文字與前後文，不會傳送影片或音訊</span></label>
         <div class="full review-hint" id="aiPrivacyStatus" role="status">尚未判定端點；只有 localhost、127.0.0.1 或 ::1 會視為本機。</div>
         <label><span>輸出語言</span><select id="aiLanguage"><option value="zh-TW">繁體中文</option><option value="en">英文</option><option value="ja">日文</option><option value="ko">韓文</option><option value="es">西班牙文</option><option value="fr">法文</option><option value="de">德文</option><option value="pt-BR">葡萄牙文（巴西）</option><option value="vi">越南文</option><option value="th">泰文</option><option value="id">印尼文</option><option value="custom">自訂 BCP 47…</option></select></label>

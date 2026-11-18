@@ -14,8 +14,17 @@ dialog.innerHTML = `
     <section class="review-youtube-account" aria-label="YouTube 頻道">
       <p id="youtubeAccount" role="status">正在讀取頻道設定…</p>
       <details id="youtubeSetup">
-        <summary>頻道設定與首次使用說明</summary>
+        <summary>頻道設定、六步驟圖解與首次使用說明</summary>
         <p>在 Google Cloud 啟用 YouTube Data API v3，建立「桌面應用程式」OAuth client，下載 JSON 後匯入；測試模式須將登入帳號加入測試使用者。</p>
+        <figure class="review-youtube-guide">
+          <img src="/assets/youtube-setup-flow.zh-TW.png" alt="YouTube 一鍵發佈設定流程：建立 Google Cloud 專案、啟用 YouTube Data API v3、設定 OAuth、建立桌面用戶端、匯入 JSON、授權測試與上傳。" loading="lazy">
+          <figcaption>六步驟完成一次設定；之後可在此視窗連結頻道並上傳私人影片。</figcaption>
+        </figure>
+        <div class="review-youtube-reference-actions" aria-label="YouTube 設定參考附件">
+          <a class="review-button" href="/assets/youtube-setup-reference.zh-TW.docx" download>下載詳細設定參考（DOCX）</a>
+          <a class="review-button" href="/assets/youtube-setup-flow.zh-TW.png" download>下載六步驟圖解</a>
+        </div>
+        <p class="review-youtube-reference-note">附件是 Google Cloud／OAuth 的設定參考。目前版本請直接在本視窗使用「匯入 OAuth JSON」與「連結頻道」；AI 設定中的字幕 provider 與 YouTube 授權分開。請勿分享 OAuth JSON、Client Secret 或授權 token。</p>
         <div class="review-youtube-actions">
           <button class="review-button" type="button" data-action="configure">匯入 OAuth JSON</button>
           <button class="review-button" type="button" data-action="connect">連結頻道</button>

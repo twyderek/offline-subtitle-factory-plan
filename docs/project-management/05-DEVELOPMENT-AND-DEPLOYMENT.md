@@ -9,6 +9,19 @@
 - Windows 10/11 x64；封裝由 `windows-2022` runner 執行。
 - Apple Silicon macOS 12 以上。
 
+## 2026-11-18 v0.52.1 GitHub pre-release candidate
+
+- 版本由 `0.52.0` 升為 `0.52.1`，Release notes 為 `RELEASE-NOTES-0.52.1.md`；目標為目前 origin `twyderek/offline-subtitle-factory-plan`，不切換至附件計畫中的另一個 app repo。
+- `npm run electron:build:unsigned` exit 0；Setup `255,587,780` bytes／SHA-256 `5C312FDF9A8F652F3C26BE639E508FFDAE0397B51076FC529499D02AC07362BC`；Portable `254,880,396` bytes／SHA-256 `3ACBC7DEA8122D9AF7EF3F54F01D0EE41F3B832479389F7EBB498C7EE5334A93`；三項 executable 均未簽章。
+- unpacked 與 Portable packaged renderer smoke 均通過；資產、版本與 Release notes 已進入 `dist/win-unpacked/resources/app`。上傳前仍須核對 SHA-256、`latest.yml`、GitHub asset digest／URL，並以 pre-release 方式揭露未簽章與未完成實機／真實 Google 驗收。
+
+## 2026-11-18 v0.52.0 本機 Windows unsigned APP candidate
+
+- 以 root `0.52.0`、Electron `43.8.0`／electron-builder `26.17.0` 執行 `npm run electron:build:unsigned`，exit 0；輸出 `dist/win-unpacked/`、ASCII 檔名 Setup／Portable 與 `latest.yml`。本輪只建立本機 candidate，不建立 tag／Release、不上傳、不推送。
+- Setup `252,618,434` bytes／SHA-256 `8bc2656db6e65f4199aa5d9a1e35ebeff3920cc28006e95efd82c1ff1cdaefc6`；Portable `251,911,057` bytes／SHA-256 `4f5d1bddc6666b73bd3abc4622a1ad19d85c904a21c931c7dd2be65801af4990`。NanaZip `7z t` 兩包均 exit 0／`Everything is Ok`；`latest.yml` 的 `0.52.0`、Setup size 與 Base64 SHA-512 與檔案 bytes 相符。
+- `dist/win-unpacked/resources/tools` 重新執行 runtime verifier 通過；FFmpeg、FFprobe、Whisper.cpp CLI／DLL 與 tiny model 均符合 `win32-x64` manifest。封裝 resources/app 未發現 `.env`、憑證、私鑰或 partial artifact。Setup／Portable／unpacked 主 executable 的 Authenticode 均為 `NotSigned`，不得描述為已簽章可信發布。
+- Builder 的 `asar:false` 與未配置憑證警告為已知封裝狀態；本輪未改變該既有策略，並以 archive integrity、runtime hash、renderer smoke 與 unsigned 狀態驗證代替簽章聲明。
+
 ## 每次開發前
 
 ```bash

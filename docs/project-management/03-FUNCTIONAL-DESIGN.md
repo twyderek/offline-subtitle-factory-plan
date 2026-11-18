@@ -1,5 +1,17 @@
 # 專案功能設計
 
+## 2026-11-18 FR-030 YouTube 設定參考資產
+
+YouTube 發佈 dialog 的「頻道設定、六步驟圖解與首次使用說明」維持可收合，避免首次開啟時擠壓影片／字幕欄位。展開後以 `public/assets/youtube-setup-flow.zh-TW.png` 顯示需求方提供的六步驟 infographic，並以 `public/assets/youtube-setup-reference.zh-TW.docx` 提供詳細設定下載；兩者均使用穩定 URL，隨 Electron 的 `public/**/*` 一起進入 unsigned package。
+
+圖解與 DOCX 是 Google Cloud／OAuth 的參考資料，不會代替授權流程，也不會要求 renderer 讀取或保存 client secret。為避免附件內「AI 設定」說法與目前產品邊界混淆，APP 內明確引導使用者在本視窗操作「匯入 OAuth JSON」與「連結頻道」；AI 字幕 provider 設定仍是獨立功能。圖像使用 `alt`、說明文字與鍵盤可操作下載連結；內容區可捲動，圖片限制最大高度以維持窄視窗可用性。
+
+## 2026-11-18 FR-029 AI provider 設定介面欄位分流
+
+AI 設定 modal 以 `data-providers` 宣告每個 provider-specific 欄位的適用範圍；renderer 依目前 provider 切換 `.provider-field.hidden` 與可存取狀態。Azure 的 Deployment／API Version 只在 `azure` 顯示；雲端 provider 使用一般 API Key 欄位；Ollama／LM Studio 使用獨立的 `aiApiKeyLocal` 欄位，提示 loopback 通常可留空，但若使用非 loopback 自訂端點仍沿用既有金鑰與同意門檻。
+
+欄位分流只影響呈現與輸入收集，不改變後端設定契約：兩種 API Key 欄位都映射為目前 provider 的單一 `apiKey` 請求值，保存／清除仍由 provider ID namespace 處理。切換 provider 時立即套用該 provider 的預設 Base URL，清除不適用的 Azure 欄位與另一組 key input，避免殘值誤送；profile、privacy status、連線測試與模型載入共用同一目前 provider。
+
 ## 2026-11-17 FR-028 NVIDIA NIM provider
 
 NVIDIA NIM 使用獨立 provider ID `nvidia`，預設 Base URL 為 `https://integrate.api.nvidia.com/v1`，沿用既有 OpenAI-compatible transport 的 `/models` 與 `/chat/completions` 路徑、Bearer API Key、逾時／取消／錯誤分類與 optimizer response contract。NVIDIA provider 不被分類為 loopback；設定頁選項只提供預設端點與模型載入入口，實際可用模型由 NVIDIA `/models` 回應決定。
