@@ -1,5 +1,18 @@
 # 改版與工作紀錄
 
+## 2026-11-20 — PR #4 與 main 分支衝突整合
+
+- 狀態：進行中
+- 執行者：Codex
+- 需求來源：需求方選擇建立 GitHub Pull Request，並逐項解決目前 feature branch 與 `main` 的衝突。
+- 目標：保留 `codex/ai-workflow-optimization` 的 root v0.52.1 AI／YouTube／發布治理內容，讓 PR #4 `https://github.com/twyderek/offline-subtitle-factory-plan/pull/4` 可由 GitHub 重新判定為可合併；不直接合併 PR。
+- 變更等級：分支整合／發布治理；不重新發布既有 `v0.52.1` 資產，不覆寫既有 tag／Release。
+- 執行前已讀：`npm run project:preflight -- --type=release`、固定核心、release route 文件與最新工作紀錄；已確認目前工作樹的 `app/` 既有變更須保留且不納入本輪。
+- 整合策略：在乾淨暫存 worktree 以 feature branch 為工作狀態、逐一檢視與解決 `origin/main` 衝突；root 功能／版本／治理檔案依實際差異保留，`app/` 衝突先依既有發布範圍以 `main` 基準處理，避免把未納入 v0.52.1 的巢狀工作樹內容帶入 PR。
+- 可執行計畫：1. 建立乾淨暫存 worktree；2. 檢查每個衝突檔案兩側內容與現行發布範圍；3. 逐項解決並建立 merge commit；4. 推送 PR head；5. 執行文件／差異／受影響測試與獨立唯讀審查；6. 查核 PR mergeability 與剩餘風險。
+- 停止條件與回復：若 root 功能、版本、資產或治理證據無法判定，停止推送並保留 PR 現況；不使用整批 `ours`／`theirs` 覆蓋，不修改或刪除既有 `app/` 工作樹變更，不直接 merge PR。
+- 發布／外部操作授權：本輪僅依需求方明確選擇「建立 PR 並解決衝突」推送 PR head；不建立新 Release、不上傳新資產、不刪除或覆寫既有 GitHub Release。
+
 ## 2026-11-18 — v0.52.1 GitHub pre-release 發布後資產與下載核對
 
 - 狀態：完成
