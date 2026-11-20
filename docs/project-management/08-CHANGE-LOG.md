@@ -2,7 +2,7 @@
 
 ## 2026-11-20 — PR #4 與 main 分支衝突整合
 
-- 狀態：進行中
+- 狀態：完成
 - 執行者：Codex
 - 需求來源：需求方選擇建立 GitHub Pull Request，並逐項解決目前 feature branch 與 `main` 的衝突。
 - 目標：保留 `codex/ai-workflow-optimization` 的 root v0.52.1 AI／YouTube／發布治理內容，讓 PR #4 `https://github.com/twyderek/offline-subtitle-factory-plan/pull/4` 可由 GitHub 重新判定為可合併；不直接合併 PR。
@@ -26,10 +26,11 @@
   - 審查檔案：`docs/project-management/reviews/2026-11-20-pr4-main-sync-round3.md`
   - 判定（逐字引用審查檔案完整結論句）：**本輪 PR #4 與 main 分支衝突整合 round3 為有條件通過：本地驗證確認 merge commit 具有兩個父提交、27 個衝突區段均形成第一父 feature-side 最終 tree、沒有 unresolved index／conflict markers，root `0.52.1` package、root workflow、`../dist`／artifact 契約與六項 focused tests 均通過；但 `npm run docs:check:final` 實際 exit 1，HEAD 尚未固定目前 changelog 的完成／PR／Actions 敘述，且本輪未使用外部遠端證據，因此治理結案、GitHub CI／PR 狀態與 artifact 結果均不得宣稱已由本輪獨立驗證。**
   - 條件是否已被需求方接受：是（保留 PR 不直接合併；先修正治理格式並重新驗證，再完成結案）。
-- round3 修正：保留 round1／round2 原文並以附錄補齊 validator 要求的阻擋問題欄位與審查代理聲明；本條目改由 round4 複審後再結案。
-- GitHub PR 核對：PR #4 `https://github.com/twyderek/offline-subtitle-factory-plan/pull/4` 目前 `OPEN`、base `main`、head `codex/ai-workflow-optimization`、head SHA `05af9f9cd32deecfda25cf146825a45f445e48fa`、`MERGEABLE`／`CLEAN`；依需求不直接合併。
-- GitHub Actions 實際驗證：run `44656526469`／job `136023995044` 成功；Windows runner 的 `npm ci`、`npm run check`（含 source／real FFmpeg regression）、unsigned Setup／Portable build、packaged renderer／install lifecycle、EXE archive／SHA 驗證與 artifact upload 均成功；artifact `offline-subtitle-factory-0.52.1-windows-x64` 6 檔、510,746,090 bytes、digest `cae17b4c2db8d798f438cba9429031314d2ca501c3154dbf18685e39d10e8c49`。
-- 文件結案驗證：本地 `npm run docs:check`、root package／lock 版本與 workflow contract 均通過；round3 時 `npm run docs:check:final` 因既有 round2 報告格式不完整而 exit 1，補正後須由 round4 前後重新執行並記錄實際結果。
+- round3 修正：保留 round1／round2 原文並以附錄補齊 validator 要求的阻擋問題欄位與審查代理聲明；round3 報告亦補齊六面向固定欄位與格式聲明，未改寫其原始結論。
+- round3 文件修正提交：以明確 allowlist 建立 commit `563ad7f177841e2d26f2b7d731cae58eb30dd58d` 並推送至 `codex/ai-workflow-optimization`；只包含 changelog 與 round2／round3 review 文件，未納入原工作區未提交的 `app/` 變更。
+- GitHub PR 核對：PR #4 `https://github.com/twyderek/offline-subtitle-factory-plan/pull/4` 目前 `OPEN`、base `main`、head `codex/ai-workflow-optimization`、head SHA `563ad7f177841e2d26f2b7d731cae58eb30dd58d`、`MERGEABLE`／`CLEAN`；依需求不直接合併。
+- GitHub Actions 實際驗證：run `44663115731`／job `136045849416` 與 PR 觸發 run `44663122742` 均成功；Windows runner 的 `npm ci`、`npm run check`（含 source／real FFmpeg regression）、unsigned Setup／Portable build、packaged renderer／install lifecycle、EXE archive／SHA 驗證與 artifact upload 均成功；artifact `offline-subtitle-factory-0.52.1-windows-x64` 6 檔、510,746,094 bytes、digest `43038cef70db4f8d37af8a828108d7437f2b8f9d09fd85e245adf2844fec843d`。
+- 文件結案驗證：本地 `npm run docs:check` 通過；補正 round2／round3 review 格式後，`npm run docs:check:final` 通過；root package／lock 版本與 workflow contract 均通過；GitHub Windows runner 的完整 `npm run check` 亦成功。
 - 遺留風險：PR 尚未合併；真實 Google OAuth／API key／YouTube 頻道影片字幕上傳、人工 Setup 安裝後 native GUI／AX／screen reader、macOS build／package／實機仍未驗收。開發機的 Windows symlink fixture `EPERM` 仍是本機環境限制，但 GitHub Windows runner 已通過完整回歸；不得將本條目擴張為真實外部服務或跨平台 release acceptance。
 
 ## 2026-11-18 — v0.52.1 GitHub pre-release 發布後資產與下載核對
