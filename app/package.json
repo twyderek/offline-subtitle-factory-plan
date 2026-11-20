@@ -11,14 +11,21 @@
     "electron:start": "electron .",
     "electron:dev": "node scripts/start-electron-dev.mjs",
     "project:preflight": "node scripts/project-preflight.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:unit:coverage": "vitest run --coverage",
+    "lint": "eslint lib/errors.mjs lib/settings.mjs lib/utils.mjs lib/job-manager.mjs lib/logger.mjs lib/asr-runner.mjs lib/trim-runner.mjs lib/model-manager.mjs lib/health-check.mjs public/shared/**/*.mjs public/app/index.mjs public/review/index.mjs public/trim/index.mjs tests/unit/**/*.mjs",
+    "format:check": "prettier --check lib/errors.mjs lib/settings.mjs lib/utils.mjs lib/job-manager.mjs lib/logger.mjs lib/asr-runner.mjs lib/trim-runner.mjs lib/model-manager.mjs lib/health-check.mjs public/shared/**/*.mjs public/app/index.mjs public/review/index.mjs public/trim/index.mjs tests/unit/**/*.mjs",
+    "format": "prettier --write lib/errors.mjs lib/settings.mjs lib/utils.mjs lib/job-manager.mjs lib/logger.mjs lib/asr-runner.mjs lib/trim-runner.mjs lib/model-manager.mjs lib/health-check.mjs public/shared/**/*.mjs public/app/index.mjs public/review/index.mjs public/trim/index.mjs tests/unit/**/*.mjs",
     "docs:check": "node scripts/check-project-docs.mjs",
     "docs:check:final": "node scripts/check-project-docs.mjs --final",
     "probe:ollama:live": "node scripts/probe-ollama-live.mjs",
     "acceptance:whisper-models": "node scripts/verify-whisper-model-downloads.mjs",
     "acceptance:provider": "node scripts/probe-provider-live.mjs",
     "probe:breeze": "node scripts/probe-breeze-asr.mjs",
-    "test": "node scripts/test-whisper-fallback-policy.mjs && node scripts/test-whisper-models.mjs && node scripts/test-whisper-model-download.mjs && node scripts/test-whisper-srt.mjs && node scripts/test-breeze-asr.mjs && node scripts/test-breeze-runtime-manager.mjs && node scripts/test-project-preflight.mjs && node scripts/test-standing-authorization.mjs && node scripts/test-project-docs-validator.mjs && node scripts/test-media-edit.mjs && node scripts/test-bilingual-subtitles.mjs && node scripts/test-subtitle-quality.mjs && node scripts/test-whisper-quality.mjs && node scripts/test-ai-fetch.mjs && node scripts/test-ai-optimizer.mjs && node scripts/test-ai-response-parser.mjs && node scripts/test-ai-provider-migration.mjs && node scripts/test-ai-providers.mjs && node scripts/test-ollama-batch-stream.mjs && node scripts/test-review-ui.mjs && node scripts/test-core.mjs",
-    "check": "npm run docs:check && node --check server.mjs && node --check public/app.js && node --check public/review.js && node --check public/trim.js && node --check electron/main.mjs && npm test",
+    "test": "node scripts/test-whisper-fallback-policy.mjs && node scripts/test-whisper-models.mjs && node scripts/test-whisper-model-download.mjs && node scripts/test-whisper-srt.mjs && node scripts/test-breeze-asr.mjs && node scripts/test-breeze-runtime-manager.mjs && node scripts/test-project-preflight.mjs && node scripts/test-standing-authorization.mjs && node scripts/test-project-docs-validator.mjs && node scripts/test-media-edit.mjs && node scripts/test-bilingual-subtitles.mjs && node scripts/test-subtitle-quality.mjs && node scripts/test-whisper-quality.mjs && node scripts/test-ai-fetch.mjs && node scripts/test-ai-optimizer.mjs && node scripts/test-ai-response-parser.mjs && node scripts/test-ai-diagnostics.mjs && node scripts/test-ai-provider-migration.mjs && node scripts/test-ai-providers.mjs && node scripts/test-ollama-batch-stream.mjs && node scripts/test-review-ui.mjs && node scripts/test-core.mjs",
+    "check": "npm run docs:check && npm run typecheck && npm run test:unit && node --check server.mjs && node --check server-runtime.mjs && node --check public/app.js && node --check public/review.js && node --check public/trim.js && node --check electron/main.mjs && npm test",
     "runtime:manifest": "node scripts/write-runtime-manifest.mjs --target=win32-x64",
     "runtime:manifest:mac": "node scripts/write-runtime-manifest.mjs --target=darwin-arm64",
     "runtime:verify": "node scripts/verify-runtime-package.mjs --target=win32-x64",
@@ -35,8 +42,21 @@
     "node": ">=22.12.0"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^2.1.9",
     "electron": "^43.3.0",
-    "electron-builder": "^26.15.7"
+    "electron-builder": "^26.15.7",
+    "eslint": "^9.39.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "lint-staged": {
+    "*.mjs": ["eslint --fix", "prettier --write"],
+    "*.json": ["prettier --write"],
+    "*.md": ["prettier --write"]
   },
   "build": {
     "appId": "com.offline-subtitle-factory.app",
@@ -50,6 +70,7 @@
     "afterPack": "scripts/after-pack.cjs",
     "files": [
       "server.mjs",
+      "server-runtime.mjs",
       "lib/**/*",
       "runtime-manifests/**/*",
       "electron/**/*",

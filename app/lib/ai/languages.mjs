@@ -41,5 +41,5 @@ export function languagePromptInstruction(value, mode = 'proofread') {
   if (mode === 'translate') {
     return `將所有字幕翻譯為${name}（BCP 47：${tag}）；不得保留未翻譯的來源語句，專有名詞與術語表指定內容除外。`;
   }
-  return `所有修改後的字幕必須使用${name}（BCP 47：${tag}）；若原文不是該語言，請在保留原意的前提下轉換為該語言。`;
+  return '此模式不翻譯字幕；保留輸入字幕原本語言，只修改目前模式要求的文字內容。';
 }

@@ -92,6 +92,37 @@ function buildTextLengthInstruction(batch) {
   return `每個 text 都必須是該 cue 的字幕文字，不得超過對應長度上限（${limits} 字元）；禁止輸出解說、重複段落、提示詞或 Markdown。`;
 }
 
+function buildOutputContract() {
+  return '回應根物件必須嚴格符合 {"cues":[{"id":"原始 cue ID","text":"字幕文字","reason":"簡短原因"}]}；cues 必須是陣列，保留每個 ID、數量與順序。不可回傳單一 cue 物件、root array、answer、result 或其他外層名稱。';
+}
+
+function normalizeContextCue(cue) {
+  if (!cue || typeof cue !== 'object') return null;
+  return { id: cue.id, text: String(cue.text || '').trim().slice(0, 1000) };
+}
+
+function estimateCuePromptChars(cue) {
+  return JSON.stringify({ id: cue.id, text: cue.text, context: cue.context || undefined }).length + 120;
+}
+
+function buildPromptBatches(cues, batchSize, maxChars) {
+  const batches = [];
+  let batch = [];
+  let chars = 0;
+  for (const cue of cues) {
+    const cueChars = estimateCuePromptChars(cue);
+    if (batch.length && (batch.length >= batchSize || chars + cueChars > maxChars)) {
+      batches.push(batch);
+      batch = [];
+      chars = 0;
+    }
+    batch.push(cue);
+    chars += cueChars;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 import { buildGlossaryInstruction } from './project-tools.mjs';
 import { canonicalizeLanguageTag, languagePromptInstruction } from './languages.mjs';
 
@@ -216,6 +247,14 @@ function findCueArray(value, allowRootArray = false, seen = { objects: new Set()
   return null;
 }
 
+function isSingleCueObject(value) {
+  return Boolean(value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.hasOwn(value, 'id')
+    && typeof value.text === 'string');
+}
+
 function throwInvalidJson() {
   const error = new Error('AI 回傳內容不是有效 JSON');
   error.code = 'invalid_json';
@@ -228,20 +267,19 @@ function throwMissingCues() {
   throw error;
 }
 
-function parseCompletionContent(result) {
-  const rawContent = result?.choices?.[0]?.message?.content;
-  const content = contentToText(rawContent);
-  if (!content.trim() && (!rawContent || typeof rawContent !== 'object')) throw new Error('AI 未回傳字幕內容');
+function parseCompletionValue(value, allowRootArray, seenCandidates, expectedCueCount = 0, countObjectAsParsed = true) {
+  if (value === undefined || value === null) return { cues: null, parsedJson: false, hasContent: false };
+  const content = contentToText(value);
+  let parsedJson = Boolean(countObjectAsParsed && value && typeof value === 'object' && !Array.isArray(value));
+  const directCues = findCueArray(value, false);
+  if (directCues) return { cues: directCues, parsedJson: true, hasContent: Boolean(content.trim()) };
+  if (expectedCueCount === 1 && isSingleCueObject(value)) {
+    return { cues: [value], parsedJson: true, hasContent: Boolean(content.trim()) };
+  }
 
-  let parsedJson = Boolean(rawContent && typeof rawContent === 'object' && !Array.isArray(rawContent));
-  const directCues = findCueArray(rawContent, false);
-  if (directCues) return directCues;
-
-  const fragments = contentToTextFragments(rawContent);
-  const allowRootArray = typeof rawContent === 'string';
-  const isTextPartContent = Array.isArray(rawContent) && rawContent.every(isTextPart);
+  const fragments = contentToTextFragments(value);
+  const isTextPartContent = Array.isArray(value) && value.every(isTextPart);
   const candidates = allowRootArray || isTextPartContent ? [content] : fragments;
-  const seenCandidates = new Set();
   for (const fragment of candidates) {
     for (const candidate of extractJsonCandidates(fragment)) {
       if (seenCandidates.has(candidate)) continue;
@@ -250,10 +288,45 @@ function parseCompletionContent(result) {
         const parsed = JSON.parse(candidate);
         parsedJson = true;
         const cues = findCueArray(parsed, allowRootArray);
-        if (cues) return cues;
+        if (cues) return { cues, parsedJson: true, hasContent: true };
+        if (expectedCueCount === 1 && isSingleCueObject(parsed)) {
+          return { cues: [parsed], parsedJson: true, hasContent: true };
+        }
       } catch {}
     }
   }
+  return { cues: null, parsedJson, hasContent: Boolean(content.trim()) };
+}
+
+function parseCompletionContent(result, expectedCueCount = 0) {
+  const choice = result?.choices?.[0];
+  const message = choice?.message;
+  const sources = [
+    [message?.content, typeof message?.content === 'string', true],
+    [message?.parsed, false, true],
+    [message?.output, typeof message?.output === 'string', true],
+    [message?.tool_calls, false, false],
+    [choice, false, false],
+    [result?.output, typeof result?.output === 'string', true],
+    [result?.output_text, true, false],
+    [result?.response, typeof result?.response === 'string', true],
+    [result?.result, typeof result?.result === 'string', true],
+    [result?.data, typeof result?.data === 'string', true],
+    [result?.message, false, true],
+  ];
+  let parsedJson = false;
+  let hasContent = false;
+  const seenValues = new Set();
+  const seenCandidates = new Set();
+  for (const [value, allowRootArray, countObjectAsParsed] of sources) {
+    if (value === undefined || value === null || seenValues.has(value)) continue;
+    seenValues.add(value);
+    const parsed = parseCompletionValue(value, allowRootArray, seenCandidates, expectedCueCount, countObjectAsParsed);
+    parsedJson ||= parsed.parsedJson;
+    hasContent ||= parsed.hasContent;
+    if (parsed.cues) return parsed.cues;
+  }
+  if (!hasContent) throw new Error('AI 未回傳字幕內容');
   if (parsedJson) throwMissingCues();
   throwInvalidJson();
 }
@@ -328,7 +401,7 @@ function retryTimeoutSeconds(error, attempt, config) {
   return Math.min(ceiling, current * (2 ** (attempt + 1)));
 }
 
-async function completeWithRetry({ complete, body, signal, config, batchIndex, progress, retryCount }) {
+async function completeWithRetry({ complete, body, signal, config, batchIndex, progress, retryCount, onAttempt }) {
   const configuredRetries = Number(config.maxRetries);
   const maxRetries = Math.max(0, Math.min(8, Number.isFinite(configuredRetries) ? configuredRetries : 3));
   let attempt = 0;
@@ -337,6 +410,7 @@ async function completeWithRetry({ complete, body, signal, config, batchIndex, p
     try {
       return await complete(body, signal, requestOptions);
     } catch (error) {
+      await onAttempt?.(error);
       if (signal?.aborted || !error?.retryable || attempt >= maxRetries) throw error;
       const waitMs = retryDelay(error, attempt, config);
       const extendedTimeoutSeconds = retryTimeoutSeconds(error, attempt, config);
@@ -418,7 +492,7 @@ function buildTranslationRepairBody(body, batch, language) {
   };
 }
 
-export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', instructions = '', promptTemplate = '', glossary = [], search = '', language = 'zh-TW', signal, complete, checkpoint = {}, onCheckpoint }) {
+export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', instructions = '', promptTemplate = '', glossary = [], search = '', language = 'zh-TW', signal, complete, checkpoint = {}, onCheckpoint, onDiagnostic }) {
   if (!Array.isArray(cues) || cues.length === 0) throw new Error('沒有可供 AI 優化的字幕');
   const normalized = cues.map((cue, index) => ({
     id: cue.id ?? index + 1,
@@ -427,20 +501,31 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
     sourceText: String(cue.sourceText ?? cue.text ?? '').trim(),
     translatedText: String(cue.translatedText ?? cue.text ?? '').trim(),
     text: String(mode === 'translate' ? (cue.sourceText ?? cue.text ?? '') : (cue.translatedText ?? cue.text ?? '')).trim(),
+    context: cue.context && typeof cue.context === 'object' ? {
+      previous: normalizeContextCue(cue.context.previous),
+      next: normalizeContextCue(cue.context.next),
+    } : null,
   }));
   if (normalized.some((cue) => !cue.text)) throw new Error('字幕包含空白段落');
   const outputLanguage = canonicalizeLanguageTag(language);
   const batchSize = Math.max(1, Math.min(100, Number(config.batchSize) || 30));
-  const totalBatches = Math.ceil(normalized.length / batchSize);
+  const maxBatchChars = Math.max(4000, Math.min(40000, Number(config.maxBatchChars) || 12000));
+  const batches = buildPromptBatches(normalized, batchSize, maxBatchChars);
+  const totalBatches = batches.length;
   const startBatchIndex = Math.max(0, Math.min(totalBatches, Number(checkpoint.nextBatchIndex) || 0));
   const suggestions = Array.isArray(checkpoint.suggestions) ? [...checkpoint.suggestions] : [];
   const retryCount = { value: Math.max(0, Number(checkpoint.totalRetries) || 0) };
   for (let batchIndex = startBatchIndex; batchIndex < totalBatches; batchIndex += 1) {
     if (signal?.aborted) throw signal.reason || new Error('AI 優化已取消');
-    const batch = normalized.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
-    const promptBatch = batch.map((cue) => ({ id: cue.id, text: cue.text }));
+    const batch = batches[batchIndex];
+    const processedBefore = batches.slice(0, batchIndex).reduce((total, item) => total + item.length, 0);
+    const promptBatch = batch.map((cue) => ({
+      id: cue.id,
+      text: cue.text,
+      ...(mode === 'breaks' && cue.context ? { context: cue.context } : {}),
+    }));
     const relevantGlossary = glossary.filter((item) => batch.some((cue) => cue.text.includes(String(item?.source || ''))));
-    const progress = { completedBatches: batchIndex, totalBatches, processedCues: Math.min(normalized.length, batchIndex * batchSize), totalCues: normalized.length, totalRetries: retryCount.value };
+    const progress = { completedBatches: batchIndex, totalBatches, processedCues: Math.min(normalized.length, processedBefore), totalCues: normalized.length, totalRetries: retryCount.value };
     const isTranslation = mode === 'translate';
     const roleInstruction = isTranslation ? '你是專業字幕翻譯員。' : '你是字幕校對員。';
     const unchangedInstruction = isTranslation
@@ -452,6 +537,7 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
     const responseFormat = buildResponseFormat(config, batch);
     const body = {
       model: config.model,
+      max_completion_tokens: Math.min(16384, Math.max(1024, Math.ceil(batch.reduce((total, cue) => total + cue.text.length, 0) / 2) + batch.length * 64)),
       operation: mode,
       output_language: outputLanguage,
       subtitle_cue_count: batch.length,
@@ -460,7 +546,7 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
       messages: [
         {
           role: 'system',
-          content: `${roleInstruction}${promptTemplate || MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.proofread}${languagePromptInstruction(outputLanguage, mode)}${isTranslation ? '每個 text 必須是該 cue 完整句子的完整翻譯，不可只翻譯第一個詞、不可摘要、不可輸出術語表條目。' : ''}不可更改 ID、順序、段落數或時間碼，不可杜撰內容。${search ? `本次是搜尋結果限定處理，搜尋詞為「${search}」；只可修改搜尋詞相關片段，搜尋詞以外的內容（包含平台代碼、專有名詞與其他文字）必須原樣保留。` : ''}${sourceLanguageInstruction}只輸出符合請求 schema 的 JSON。text 必須使用輸入字幕的實際文字；不可輸出「優化文字」、「原ID」、「簡短原因」等佔位文字。${buildTextLengthInstruction(batch)}${unchangedInstruction}`,
+          content: `${roleInstruction}${promptTemplate || MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.proofread}${languagePromptInstruction(outputLanguage, mode)}${isTranslation ? '每個 text 必須是該 cue 完整句子的完整翻譯，不可只翻譯第一個詞、不可摘要、不可輸出術語表條目。' : ''}不可更改 ID、順序、段落數或時間碼，不可杜撰內容。${search ? `本次是搜尋結果限定處理，搜尋詞為「${search}」；只可修改搜尋詞相關片段，搜尋詞以外的內容（包含平台代碼、專有名詞與其他文字）必須原樣保留。` : ''}${sourceLanguageInstruction}只輸出符合請求 schema 的 JSON。${buildOutputContract()}text 必須使用輸入字幕的實際文字；不可輸出「優化文字」、「原ID」、「簡短原因」等佔位文字。${buildTextLengthInstruction(batch)}${unchangedInstruction}`,
         },
         {
           role: 'user',
@@ -468,25 +554,67 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
         },
       ],
     };
-    let result = await completeWithRetry({ complete, body, signal, config, batchIndex, progress, retryCount });
+    const reportResponse = async (response, validationError = null, phase = 'initial') => {
+      try {
+        await onDiagnostic?.({
+          phase,
+          batchIndex,
+          provider: config.provider || '',
+          model: config.model || '',
+          request: {
+            mode,
+            language: outputLanguage,
+            cueCount: batch.length,
+            responseFormat: responseFormat?.type || '',
+            structuredOutput: Boolean(responseFormat?.json_schema),
+            maxCompletionTokens: body.max_completion_tokens,
+            maxBatchChars,
+            messageCount: body.messages.length,
+            systemMessageLength: body.messages[0].content.length,
+            userMessageLength: body.messages[1].content.length,
+            hasGlossary: relevantGlossary.length > 0,
+          },
+          response: response?.__aiDiagnostics || null,
+          validation: validationError
+            ? { ok: false, code: validationError.code || 'validation_error', message: String(validationError.message || '').slice(0, 240) }
+            : { ok: true },
+        });
+      } catch {}
+    };
+    const validateWithReport = async (response, phase) => {
+      try {
+        const value = validateBatch(batch, parseCompletionContent(response, batch.length), mode, outputLanguage);
+        await reportResponse(response, null, phase);
+        return value;
+      } catch (error) {
+        await reportResponse(response, error, phase);
+        throw error;
+      }
+    };
+    const reportProviderError = async (error) => reportResponse(
+      { __aiDiagnostics: error?.responseDiagnostics || null },
+      { code: error?.code || 'provider_error', message: '' },
+      'provider-error',
+    );
+    let result = await completeWithRetry({ complete, body, signal, config, batchIndex, progress, retryCount, onAttempt: reportProviderError });
     let validated;
     try {
-      validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+      validated = await validateWithReport(result, 'initial');
     } catch (error) {
       if (isTranslation && canRepairTranslationValidation(error, config)) {
         const repairBody = buildTranslationRepairBody(body, batch, outputLanguage);
-        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount, onAttempt: reportProviderError });
+        validated = await validateWithReport(result, 'translation-repair');
       } else if (canRepairOllamaLength(error, config)) {
         complete.progress?.({ ...progress, activeBatch: batchIndex + 1, validationRepair: true, validationRepairReason: 'length', totalRetries: retryCount.value });
         const repairBody = buildLengthRepairBody(body, batch, mode, outputLanguage);
-        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount, onAttempt: reportProviderError });
+        validated = await validateWithReport(result, 'length-repair');
       } else if (canRepairLocalJson(error, config)) {
         complete.progress?.({ ...progress, activeBatch: batchIndex + 1, validationRepair: true, totalRetries: retryCount.value });
         const repairBody = buildJsonRepairBody(body, batch, mode, outputLanguage);
-        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount });
-        validated = validateBatch(batch, parseCompletionContent(result), mode, outputLanguage);
+        result = await completeWithRetry({ complete, body: repairBody, signal, config, batchIndex, progress, retryCount, onAttempt: reportProviderError });
+        validated = await validateWithReport(result, 'json-repair');
       } else {
       // A small local model may return only a term or a malformed rewrite. In
       // terminology mode the deterministic glossary is authoritative, so
@@ -503,7 +631,7 @@ export async function optimizeSubtitleCues({ cues, config, mode = 'proofread', i
       const source = batch[index];
       if (item.text !== source.text) suggestions.push({ ...item, mode, original: source.text, start: source.start, end: source.end });
     });
-    const completedProgress = { completedBatches: batchIndex + 1, totalBatches, processedCues: Math.min(normalized.length, (batchIndex + 1) * batchSize), totalCues: normalized.length, totalRetries: retryCount.value };
+    const completedProgress = { completedBatches: batchIndex + 1, totalBatches, processedCues: Math.min(normalized.length, processedBefore + batch.length), totalCues: normalized.length, totalRetries: retryCount.value };
     await onCheckpoint?.({ nextBatchIndex: batchIndex + 1, suggestions, totalRetries: retryCount.value, progress: completedProgress });
     complete.progress?.(completedProgress);
   }

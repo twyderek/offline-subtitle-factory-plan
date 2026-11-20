@@ -1,4 +1,4 @@
-name: Build Windows 0.51.0
+name: Build Windows 0.52.1
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ on:
       - main
   push:
     branches:
-      - codex/release-0.51.0
+      - codex/ai-workflow-optimization
     tags:
-      - v0.51.0
+      - v0.52.1
 
 permissions:
   contents: read
@@ -22,10 +22,6 @@ jobs:
     env:
       CSC_LINK: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
-    defaults:
-      run:
-        working-directory: app
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -35,7 +31,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install JavaScript dependencies
         run: npm ci
@@ -62,8 +58,8 @@ jobs:
       - name: Verify Windows packaged renderer and install lifecycle
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem ../dist -Filter '*setup-0.51.0.exe' -File | Select-Object -First 1).FullName
-          $portable = (Get-ChildItem ../dist -Filter '*portable-0.51.0.exe' -File | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem ../dist -Filter '*setup-0.52.1.exe' -File | Select-Object -First 1).FullName
+          $portable = (Get-ChildItem ../dist -Filter '*portable-0.52.1.exe' -File | Select-Object -First 1).FullName
           if (-not $setup -or -not $portable) { throw 'Setup 或 Portable artifact 不存在。' }
           powershell -ExecutionPolicy Bypass -File scripts/verify-windows-installation.ps1 `
             -SetupPath $setup `
@@ -92,9 +88,9 @@ jobs:
             }
           }
 
-          $releaseNotes = '../dist/win-unpacked/resources/app/RELEASE-NOTES-0.51.0.md'
+          $releaseNotes = '../dist/win-unpacked/resources/app/RELEASE-NOTES-0.52.1.md'
           if (-not (Test-Path -LiteralPath $releaseNotes -PathType Leaf)) {
-            throw 'Packaged 0.51.0 release notes are missing.'
+            throw 'Packaged 0.52.1 release notes are missing.'
           }
 
           $breezeGuide = '../dist/win-unpacked/resources/app/docs/BREEZE-ASR-25.md'
@@ -135,8 +131,8 @@ jobs:
       - name: Upload Windows preview artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: offline-subtitle-factory-0.51.0-windows-x64
+          name: offline-subtitle-factory-0.52.1-windows-x64
           path: |
-            app/.artifacts/windows-x64/*
+            .artifacts/windows-x64/*
           if-no-files-found: error
           retention-days: 14

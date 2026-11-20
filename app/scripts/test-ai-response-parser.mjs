@@ -57,6 +57,84 @@ await assert.rejects(
 const directObject = await optimizeWithContent({ cues: [expectedCue] }, { provider: 'openai-compatible' });
 assert.equal(directObject.suggestions[0].text, expectedCue.text, 'direct cues object 應解析');
 
+const singleCueObject = await optimizeWithContent(JSON.stringify(expectedCue), { provider: 'openai-compatible' });
+assert.equal(singleCueObject.suggestions[0].text, expectedCue.text, '單批單字幕的 cue object 應安全包裝為 cues 陣列');
+
+const directSingleCueObject = await optimizeWithContent(expectedCue, { provider: 'openai-compatible' });
+assert.equal(directSingleCueObject.suggestions[0].text, expectedCue.text, '直接回傳單一 cue object 應安全包裝為 cues 陣列');
+
+const parsedEnvelope = await optimizeSubtitleCues({
+  cues: source,
+  config: { provider: 'openai-compatible', model: 'test-model', batchSize: 1 },
+  complete: async () => ({ choices: [{ message: { content: null, parsed: { cues: [expectedCue] } } }] }),
+});
+assert.equal(parsedEnvelope.suggestions[0].text, expectedCue.text, 'message.parsed envelope 應解析');
+
+const outputTextEnvelope = await optimizeSubtitleCues({
+  cues: source,
+  config: { provider: 'openai-compatible', model: 'test-model', batchSize: 1 },
+  complete: async () => ({ output: [{ type: 'output_text', text: jsonObject }] }),
+});
+assert.equal(outputTextEnvelope.suggestions[0].text, expectedCue.text, 'output text-part envelope 應解析');
+
+const toolCallEnvelope = await optimizeSubtitleCues({
+  cues: source,
+  config: { provider: 'openai-compatible', model: 'test-model', batchSize: 1 },
+  complete: async () => ({ choices: [{ message: { content: '', tool_calls: [{ function: { arguments: jsonObject } }] } }] }),
+});
+assert.equal(toolCallEnvelope.suggestions[0].text, expectedCue.text, 'tool-call arguments envelope 應解析');
+
+const diagnostics = [];
+const diagnosticResponse = { choices: [{ message: { content: jsonObject } }] };
+Object.defineProperty(diagnosticResponse, '__aiDiagnostics', {
+  value: {
+    status: 200,
+    ok: true,
+    contentType: 'application/json',
+    requestId: 'request-id-test',
+    bodyLength: 128,
+    resultKind: 'object',
+    topLevelKeys: ['choices'],
+    choiceKeys: ['message', 'finish_reason'],
+    messageKeys: ['content'],
+    finishReason: 'stop',
+    contentKind: 'string',
+    contentLength: jsonObject.length,
+    parsedKind: 'missing',
+    outputKind: 'missing',
+    outputTextLength: null,
+    toolCallCount: 0,
+    hasRefusal: false,
+    hasError: false,
+  },
+});
+await optimizeSubtitleCues({
+  cues: source,
+  config: { provider: 'azure', model: 'test-model', batchSize: 1 },
+  mode: 'breaks',
+  language: 'en',
+  complete: async () => diagnosticResponse,
+  onDiagnostic: async (value) => diagnostics.push(value),
+});
+assert.equal(diagnostics.length, 1, '成功回應應產生一筆安全診斷紀錄');
+assert.equal(diagnostics[0].response.requestId, 'request-id-test');
+assert.equal(diagnostics[0].request.mode, 'breaks');
+assert.equal(diagnostics[0].request.language, 'en');
+assert.equal(diagnostics[0].request.maxCompletionTokens, 1024);
+assert.doesNotMatch(JSON.stringify(diagnostics), /原始字幕|修正後字幕/, '診斷紀錄不得包含字幕全文');
+
+const failedDiagnostics = [];
+await assert.rejects(
+  () => optimizeSubtitleCues({
+    cues: source,
+    config: { provider: 'azure', model: 'test-model', batchSize: 1 },
+    complete: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: 'no cues' }) } }] }),
+    onDiagnostic: async (value) => failedDiagnostics.push(value),
+  }),
+  /AI 回傳缺少 cues 陣列/,
+);
+assert.equal(failedDiagnostics[0].validation.code, 'missing_cues', '格式錯誤應留下可分類的診斷碼');
+
 for (const field of ['response', 'output', 'result', 'data', 'content', 'message']) {
   const nestedObject = await optimizeWithContent({ [field]: { cues: [expectedCue] } }, { provider: 'openai-compatible' });
   assert.equal(nestedObject.suggestions[0].text, expectedCue.text, `${field}.cues explicit object 應解析`);

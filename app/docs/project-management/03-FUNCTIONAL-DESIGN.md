@@ -1,5 +1,18 @@
 # 專案功能設計
 
+## 2026-11-12 staged architecture and maintainability optimization
+
+本輪依 `OPTIMIZATION_STRATEGY.md` 執行 P0 → P1 → P2 → P3；附件內容作為實作規格與風險緩解參考，不改變既有 API、任務資料夾格式或 Electron／瀏覽器雙模式邊界。
+
+| 階段 | 設計變更 | 相容性與驗證 |
+|---|---|---|
+| P0 | 導入可漸進採用的 TypeScript 型別層、統一 AppError 錯誤契約、設定 schema migration | 保留既有設定鍵與任務資料；以 `npm run typecheck`、既有 `npm run check` 驗證 |
+| P1 | 將共用純函式、任務／ASR／修剪／模型／健康檢查邊界與 Vitest 單元測試分離；前端新增 shared module 邊界 | 路由與 API payload 維持不變；先保留既有入口，再切換模組入口並跑既有 UI／核心測試 |
+| P2 | 將佇列狀態寫入可恢復檔案、追加 JSONL job log、補充 Whisper.cpp GPU backend 能力資訊 | 舊 `job-status.json.logs` 保留；中斷任務只標示可重試，不刪除既有輸出 |
+| P3 | 以目錄 mtime／size 做模型檢查快取、分級工具快取、字幕列表虛擬化，補充架構／貢獻文件與 pre-commit 工具 | 快取失效可由 force 檢查繞過；UI 未支援模組時保留既有 fallback；文件與格式檢查列入收尾驗證 |
+
+依賴方向固定為：共用純函式 → domain manager／runner → server 路由；前端 shared → page modules → HTML entry。`server.mjs` 不反向依賴 UI，AI provider 與既有媒體工具維持既有邊界。
+
 ## 系統邊界
 
 ```text

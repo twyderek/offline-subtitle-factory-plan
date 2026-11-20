@@ -31,7 +31,40 @@ assert.equal(result.suggestions[0].id, 1);
 assert.equal(result.suggestions[0].start, source[0].start);
 assert.equal(progress.at(-1).processedCues, 2);
 assert.equal(requestBodies[0].temperature, undefined, '請求不可固定 temperature，以相容 GPT-5');
-assert.match(requestBodies[0].messages[0].content, /繁體中文（BCP 47：zh-TW）/);
+assert.match(requestBodies[0].messages[0].content, /此模式不翻譯字幕/);
+assert.equal(requestBodies[0].max_completion_tokens, 1024, '單 cue AI 請求應保留足夠的 completion token 上限');
+assert.match(requestBodies[0].messages[0].content, /回應根物件必須嚴格符合/);
+assert.match(requestBodies[0].messages[0].content, /cues 必須是陣列/);
+
+const longBodies = [];
+const longCues = [
+  { id: 'LONG_1', text: '甲'.repeat(2500) },
+  { id: 'LONG_2', text: '乙'.repeat(2500) },
+];
+const longResult = await optimizeSubtitleCues({
+  cues: longCues,
+  config: { model: 'test', batchSize: 2, maxBatchChars: 4000 },
+  complete: async (body) => {
+    longBodies.push(body);
+    const batch = JSON.parse(body.messages[1].content.split('待處理字幕：\n')[1]);
+    return { choices: [{ message: { content: JSON.stringify({ cues: batch.map((cue) => ({ id: cue.id, text: cue.text, reason: '' })) }) } }] };
+  },
+});
+assert.equal(longBodies.length, 2, '超過字元預算時應動態拆分 prompt batch');
+assert.equal(longResult.totalBatches, 2, '動態拆分後 totalBatches 應反映實際批次');
+
+const breakBodies = [];
+await optimizeSubtitleCues({
+  cues: [{ id: 'BREAK_1', text: '需要改善斷句的字幕。', context: { previous: { id: 'BREAK_0', text: '前一句。' }, next: { id: 'BREAK_2', text: '後一句。' } } }],
+  config: { model: 'test', batchSize: 1 },
+  mode: 'breaks',
+  complete: async (body) => {
+    breakBodies.push(body);
+    return { choices: [{ message: { content: JSON.stringify({ cues: [{ id: 'BREAK_1', text: '需要改善斷句的字幕。', reason: '' }] }) } }] };
+  },
+});
+assert.match(breakBodies[0].messages[1].content, /BREAK_0/);
+assert.match(breakBodies[0].messages[1].content, /BREAK_2/);
 
 const wrappedJson = await optimizeSubtitleCues({
   cues: source.slice(0, 1),
@@ -55,6 +88,8 @@ for (const [mode, instruction] of [['proofread', '修正錯字'], ['breaks', '�
     return { choices: [{ message: { content: JSON.stringify({ cues: [{ id: 1, text: source[0].text, reason: '' }] }) } }] };
   } });
   assert.match(modeBodies[0].messages[0].content, new RegExp(instruction), `${mode} mode 應傳送對應 instruction`);
+  if (mode === 'translate') assert.match(modeBodies[0].messages[0].content, /所有字幕翻譯/);
+  else assert.match(modeBodies[0].messages[0].content, /此模式不翻譯字幕/);
 }
 const searchBodies = [];
 await optimizeSubtitleCues({ cues: [{ id: 'E3_01', text: '裡面有一個從 E3 會入的方式。' }], config: { model: 'test', batchSize: 1 }, mode: 'terms', search: '會入', complete: async (body) => {

@@ -1,5 +1,40 @@
 # 改版與工作紀錄
 
+## 2026-11-12 — AI 優化流程 P0→P1→P2→P3 架構與可維護性實作（OPT-001）
+
+- 狀態：開發與四階段驗證完成；治理結案待獨立審查
+- 需求來源：需求方要求嚴格依附件 `OPTIMIZATION_STRATEGY.md` 的 P0 → P1 → P2 → P3 順序執行，且每階段完成後執行 `npm run check`
+- 實作範圍：P0 型別／錯誤／設定 schema；P1 後端邊界、單元測試與前端模組化；P2 佇列持久化／結構化日誌／GPU 偵測；P3 快取、Virtual Scroll、架構文件與開發工具鏈
+- 變更等級：重大（架構分層、設定 schema migration、任務佇列持久化、前端入口與開發工具鏈；不含公開發布）
+- 執行前已讀：`AGENTS.md`、`app/AGENTS.md`、project-management README、development／test-validation／independent-review／document-closeout workflows、`00-CURRENT-STATUS.md`、`03-FUNCTIONAL-DESIGN.md`、本文件，以及需求方提供的 `OPTIMIZATION_STRATEGY.md`
+- 執行界線：附件是實作規格與風險緩解參考；專案治理、既有 API 相容性、未追蹤使用者資料與本檔案的獨立審查規範仍優先
+- 驗收方式：P0、P1、P2、P3 各自完成後執行 `npm run check`；完成後依 development workflow 執行獨立只讀審查、文件收尾與 `npm run docs:check:final`
+- 實際修改與驗證結果：P0 建立 TypeScript／Vitest 配置、型別契約、`lib/errors.mjs`、settings schema v3 migration；P1 建立共用 utils、JobManager／runner／model／health 邊界、Vitest 單元測試與前端 shared module／穩定入口，並將 `server.mjs` 收斂為 bootstrap、`server-runtime.mjs` 保留相容執行核心；P2 加入 `.queue-state.json` 重啟恢復／interrupted 標記、`logs/job.log.jsonl` 結構化紀錄與 Whisper.cpp GPU backend 資訊；P3 加入 mtime／size 模型快取、分級 tool TTL、300 段以上字幕 Virtual Scroll、`ARCHITECTURE.md`、`CONTRIBUTING.md`、ESLint／Prettier／lint-staged／Husky hook。P0、P1、P2、P3 與 bootstrap 收斂後的 `npm run check` 均 exit 0；最後一次包含 5 個 Vitest 檔案／14 tests、既有核心／AI／UI／runtime regression、TypeScript 與語法檢查；`npm run test:unit:coverage` 核心模組 statements 87.35%、`npm run lint`、`npm run format:check`、`git diff --check` 亦通過
+- 主要風險：模組循環依賴、JavaScript 遷移期間的型別錯誤、前端入口回歸、測試環境缺少 FFmpeg／Whisper；依附件風險表採用單向依賴、過渡型別、保留入口與 mock 驗證
+- 發布授權：本輪未授權建立 tag、GitHub Release 或公開發布；僅進行本地實作與測試
+- 獨立審查是否執行：待執行（本輪未將主要代理的 read-only 核對冒充獨立 reviewer；因此尚未宣稱治理 final closeout）
+- 獨立審查結論：待獨立只讀 reviewer 依 `workflows/04-INDEPENDENT-REVIEW.md` 建立 round1 報告
+
+## 2026-09-07 — Offline Subtitle Factory 0.51.1 Windows pristine release-risk waiver review（REL-042）
+
+- 狀態：完成本輪 waiver evidence 與獨立複審；未發布
+- 結案判定：需求方已對 exact candidate `0.51.1`／`36062c9c3c5e57af662eab29fe52eb745ce5d606` 明確接受 Windows pristine validation 的已知缺口；`WINDOWS_LOCAL_PRISTINE=TEST_GAP`、各項 `NOT_RUN` 與 `WINDOWS_HOST_QUALIFICATION=FAIL_NO_APPROVED_ENVIRONMENT` 均保留，僅將治理上的 Windows pristine release blocker 記為 `WAIVED`
+- 審查／交付屬性：release-risk waiver／pre-authorization readiness；本輪不修改程式、workflow、candidate binary 或既有 CI／provenance 結果
+- 執行者：Codex；獨立複審由只讀 reviewer 完成
+- 需求來源：需求方要求針對 0.51.1 啟動 Windows Pristine Release-Risk Waiver／Exception Review，並明確區分 waiver、release readiness 與正式 release authorization
+- 關聯需求／缺陷：`REL-042`、Windows pristine validation gap、0.51.1 external release-readiness candidate
+- 變更等級：發布治理（風險例外、候選接受判定與發布前界線；不含公開發布操作）
+- 執行前已讀：`AGENTS.md`、`app/AGENTS.md`、project-management README、治理／測試／獨立審查／build-release workflows、`00-CURRENT-STATUS.md`、本文件與 `09-STANDING-AUTHORIZATIONS.md`
+- 來源基準：requester-provided authoritative candidate commit `36062c9c3c5e57af662eab29fe52eb745ce5d606`、remote ref `codex/release-0.51.1-external-candidate`；本地 checkout 為 `codex/remove-lm-studio`／`3469618e00255767cbb26735e71dcc68e7f31891`、package version `0.51.0`，未將本地 checkout 冒充 0.51.1 source proof
+- Windows external evidence：CI run `33846267720`、job `100938743199`、artifact `9926825379`、artifact digest `sha256:c7bc0bc72b40e711f2ffe7fc77ef97b9d8cb2cd9c678a83e733a443211c8a48c`、Setup SHA `ac7be5b8b40d85ada17f55c69f412bbe532de3a73512fede1ed5ea549adcc7cd`、Portable SHA `530f80b83faee1ca08a8768921cd16c0964fdcccf6ffb43b36b0b0f2c16f9ba8` 均以 requester-provided context 記錄；本輪未重新下載或重跑
+- Waiver scope：只適用於版本 `0.51.1` 與上述 binary candidate commit；任何 binary-affecting change、`0.51.2`、`0.52.x` 或 future build 必須重新評估
+- 風險與界線：Windows Setup／Portable／renderer restart／migration／uninstall／user-data boundary、SmartScreen pristine observation 與 Authenticode clean-host observation 仍未覆蓋；Windows unsigned、SmartScreen uncertainty、macOS ad-hoc／未 notarized 與 public provenance 尚未驗證均如實保留；不得以 waiver 忽略後續真實 defect
+- 證據：`docs/project-management/evidence/2026-09-07-windows-pristine-waiver-0511.json`
+- 獨立審查：`docs/project-management/reviews/2026-09-07-0-51-1-windows-pristine-waiver-review.md`
+- 獨立複審結論（逐字引用完整結論句）：**本輪獨立 release-risk waiver 複審判定：`0.51.1`／binary candidate commit `36062c9c3c5e57af662eab29fe52eb745ce5d606` 的 Windows pristine release-risk blocker 在 exact candidate scope 內 WAIVED，`RELEASE_CANDIDATE_ACCEPTANCE` 為 CONDITIONAL_PASS；Windows pristine 狀態仍為 `TEST_GAP`，所有 `NOT_RUN` 保持原狀，requester-provided CI／artifact context 未於本地重驗但可作 mitigating evidence；因 `PUBLIC_PROVENANCE_PIPELINE=READY_FOR_FUTURE_RELEASE_UPLOAD`，`PUBLIC_RELEASE_PROVENANCE=UNVERIFIED` 在 pre-authorization 階段不形成 circular blocker，故 `PUBLIC_RELEASE_READINESS` 為 READY_FOR_AUTHORIZATION；`PUBLIC_RELEASE_AUTHORIZATION=NOT_GRANTED` 仍是刻意停止邊界，`STABLE_RELEASE_RECOMMENDATION` 為 CONDITIONAL，而本報告不構成任何正式 release authorization。**
+- 發布授權：未授予；`PUBLIC_RELEASE_AUTHORIZATION=NOT_GRANTED`。本輪不得建立 tag、push tag、GitHub Release 或上傳 public assets；即使 readiness 為 `READY_FOR_AUTHORIZATION`，仍需下一個明確正式發布授權
+- 遺留風險與後續事項：Windows pristine `TEST_GAP` 未解除；正式發布前／發布後仍須依授權範圍完成 public asset upload、asset／digest／download 核對與風險揭露；任一真實 Windows defect 都會重新將 readiness 設為 `NOT_READY`
+
 ## 2026-09-01 — Offline Subtitle Factory 0.51.0 LM Studio provider removal preparation（REL-041）
 
 - 狀態：完成
