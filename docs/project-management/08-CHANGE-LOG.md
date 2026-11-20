@@ -12,13 +12,25 @@
 - 可執行計畫：1. 建立乾淨暫存 worktree；2. 檢查每個衝突檔案兩側內容與現行發布範圍；3. 逐項解決並建立 merge commit；4. 推送 PR head；5. 執行文件／差異／受影響測試與獨立唯讀審查；6. 查核 PR mergeability 與剩餘風險。
 - 停止條件與回復：若 root 功能、版本、資產或治理證據無法判定，停止推送並保留 PR 現況；不使用整批 `ours`／`theirs` 覆蓋，不修改或刪除既有 `app/` 工作樹變更，不直接 merge PR。
 - 發布／外部操作授權：本輪僅依需求方明確選擇「建立 PR 並解決衝突」推送 PR head；不建立新 Release、不上傳新資產、不刪除或覆寫既有 GitHub Release。
+- 發布授權：本輪不建立 Release／上傳資產；需求方已明確授權提交與推送 PR head，範圍不含直接合併 PR。
 - round1 獨立審查：`docs/project-management/reviews/2026-11-20-pr4-main-sync-round1.md`；結論為不通過，指出 Windows workflow 的 app lockfile／版本路徑問題與本條目解衝突策略記載不實。
 - round1 修正：Windows workflow 已改為 root 0.52.1 的 lockfile、scripts、artifact 路徑與版本；本條目已改為實際採用的逐檔 feature-side 策略，且未修改 round1 報告。
-- 獨立審查是否執行：是；round1 不通過後已修正並完成 round2 複審。
-- round2 獨立審查：`docs/project-management/reviews/2026-11-20-pr4-main-sync-round2.md`。
-- round2 判定（逐字引用審查檔案可逐字引用的完整結論句）：**本輪 PR #4 與 main 分支衝突整合 round2 獨立複審為有條件通過：目前本地工作樹已解除 round1 的 Windows workflow app lockfile／0.51.0 路徑與 changelog main-baseline 記載問題，merge commit 仍具兩個正確父提交、保留第一父完整 root v0.52.1 與 app tree、27 個實際衝突均形成 feature-side 結果且沒有 unresolved index／conflict markers，root package／lock 版本、文件檢查與六項 focused tests亦通過；但修正尚未形成並推送新 commit，GitHub remote mergeability／Actions、完整 regression、安裝後 GUI、真實 OAuth／YouTube 與 macOS 均未驗收，Windows symlink fixture EPERM 仍是環境限制，因此不得把本結論擴張為完整 PR、產品或 release acceptance。**
+- 獨立審查是否執行：是；round1 不通過後已修正並完成 round2、round3 複審；round3 發現既有審查報告格式與本地 final gate 尚需修正。
+- round2 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-20-pr4-main-sync-round2.md`
+  - 判定（逐字引用審查檔案完整結論句）：**本輪 PR #4 與 main 分支衝突整合 round2 獨立複審為有條件通過：目前本地工作樹已解除 round1 的 Windows workflow app lockfile／0.51.0 路徑與 changelog main-baseline 記載問題，merge commit 仍具兩個正確父提交、保留第一父完整 root v0.52.1 與 app tree、27 個實際衝突均形成 feature-side 結果且沒有 unresolved index／conflict markers，root package／lock 版本、文件檢查與六項 focused tests亦通過；但修正尚未形成並推送新 commit，GitHub remote mergeability／Actions、完整 regression、安裝後 GUI、真實 OAuth／YouTube 與 macOS 均未驗收，Windows symlink fixture EPERM 仍是環境限制，因此不得把本結論擴張為完整 PR、產品或 release acceptance。**
+  - 條件是否已被需求方接受：是（需求方選擇建立 PR 並解決衝突；本輪已提交／推送並完成 GitHub PR／Actions 核對）。
 - round2 修正後開發驗證：`npm run docs:check`、root package／lock 0.52.1 版本契約、root workflow `../dist`／artifact 靜態契約，以及 AI provider、校閱 UI、YouTube SDK／streams／lifecycle／UI CLI 六項 focused tests 均 exit 0；完整 `npm run check` 仍受 Windows symlink fixture `EPERM` 阻塞，未宣稱完整回歸通過。
-- round2 待完成條件：以明確 allowlist 提交 workflow、changelog 與兩輪審查報告，推送 PR head 後重查 GitHub mergeability／Actions；Setup 安裝後 GUI、真實 OAuth／YouTube、macOS 與 symlink 權限仍屬未驗收／已揭露風險。
+- round2 結案：已以明確 allowlist 提交 workflow、changelog 與兩輪審查報告，形成 commit `05af9f9cd32deecfda25cf146825a45f445e48fa` 並推送至 `codex/ai-workflow-optimization`；未納入原工作區未提交的 `app/` 變更。
+- round3 獨立審查結論：
+  - 審查檔案：`docs/project-management/reviews/2026-11-20-pr4-main-sync-round3.md`
+  - 判定（逐字引用審查檔案完整結論句）：**本輪 PR #4 與 main 分支衝突整合 round3 為有條件通過：本地驗證確認 merge commit 具有兩個父提交、27 個衝突區段均形成第一父 feature-side 最終 tree、沒有 unresolved index／conflict markers，root `0.52.1` package、root workflow、`../dist`／artifact 契約與六項 focused tests 均通過；但 `npm run docs:check:final` 實際 exit 1，HEAD 尚未固定目前 changelog 的完成／PR／Actions 敘述，且本輪未使用外部遠端證據，因此治理結案、GitHub CI／PR 狀態與 artifact 結果均不得宣稱已由本輪獨立驗證。**
+  - 條件是否已被需求方接受：是（保留 PR 不直接合併；先修正治理格式並重新驗證，再完成結案）。
+- round3 修正：保留 round1／round2 原文並以附錄補齊 validator 要求的阻擋問題欄位與審查代理聲明；本條目改由 round4 複審後再結案。
+- GitHub PR 核對：PR #4 `https://github.com/twyderek/offline-subtitle-factory-plan/pull/4` 目前 `OPEN`、base `main`、head `codex/ai-workflow-optimization`、head SHA `05af9f9cd32deecfda25cf146825a45f445e48fa`、`MERGEABLE`／`CLEAN`；依需求不直接合併。
+- GitHub Actions 實際驗證：run `44656526469`／job `136023995044` 成功；Windows runner 的 `npm ci`、`npm run check`（含 source／real FFmpeg regression）、unsigned Setup／Portable build、packaged renderer／install lifecycle、EXE archive／SHA 驗證與 artifact upload 均成功；artifact `offline-subtitle-factory-0.52.1-windows-x64` 6 檔、510,746,090 bytes、digest `cae17b4c2db8d798f438cba9429031314d2ca501c3154dbf18685e39d10e8c49`。
+- 文件結案驗證：本地 `npm run docs:check`、root package／lock 版本與 workflow contract 均通過；round3 時 `npm run docs:check:final` 因既有 round2 報告格式不完整而 exit 1，補正後須由 round4 前後重新執行並記錄實際結果。
+- 遺留風險：PR 尚未合併；真實 Google OAuth／API key／YouTube 頻道影片字幕上傳、人工 Setup 安裝後 native GUI／AX／screen reader、macOS build／package／實機仍未驗收。開發機的 Windows symlink fixture `EPERM` 仍是本機環境限制，但 GitHub Windows runner 已通過完整回歸；不得將本條目擴張為真實外部服務或跨平台 release acceptance。
 
 ## 2026-11-18 — v0.52.1 GitHub pre-release 發布後資產與下載核對
 

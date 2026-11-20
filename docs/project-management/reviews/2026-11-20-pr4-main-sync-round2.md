@@ -80,8 +80,15 @@
   5. 完整 `npm run check` 未 exit 0；本輪六項 focused pass 與靜態 workflow pass 不等同完整產品或 release acceptance。
 - 給主要開發代理的具體後續要求：以目前已審 workflow（root package／`../dist`）與 changelog 差異為準，僅 stage 明確 allowlist 加上 round1／round2 報告；commit／push 後重查 PR base/head／mergeability 與 Actions，保存 run SHA／exit／artifact 證據；補齊 08 結案引用並執行 `npm run docs:check:final`。若 commit 後內容或 workflow 再變，須重跑受影響契約檢查，不得沿用本報告代表新差異。
 
+### 治理格式補充（主要代理附加，保留本報告原文）
+
+- 阻擋問題（若有）：本報告原列的遠端結案、文件 final gate、完整 regression、安裝後 GUI、真實 OAuth／YouTube 與 macOS 未驗收，以及 Windows symlink `EPERM` 環境限制。
+
 ## 審查代理聲明
 
 - 本審查代理除建立 `docs/project-management/reviews/2026-11-20-pr4-main-sync-round2.md` 外，僅執行讀取、指令執行與驗證，未修改任何其他專案檔案。
 - 本報告未修改 `docs/project-management/08-CHANGE-LOG.md` 或 round1 報告。
 - 若上述聲明不實，本報告無效。
+
+本審查代理除建立本報告外，僅執行讀取、指令執行與驗證，未修改任何其他專案檔案。
+若上述聲明不實，本報告無效。
